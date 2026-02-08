@@ -13,7 +13,8 @@ An AI-powered Swedish tax advisory system using RAG (Retrieval-Augmented Generat
 - **Vector DB**: Qdrant (cosine similarity, 1536 dimensions)
 - **Queue**: BullMQ + Redis 7
 - **Embeddings**: OpenAI `text-embedding-3-large` (1536 dims)
-- **Reranking**: Cohere (planned)
+- **LLM**: Configurable — OpenAI GPT-4o (default) or Anthropic Claude via `LLM_PROVIDER` env var
+- **Reranking**: Cohere `rerank-multilingual-v3.0` (Swedish support)
 - **Scraping**: Cheerio (HTML), pdf-parse (PDFs)
 - **Chunking**: LangChain RecursiveCharacterTextSplitter
 - **Linter/Formatter**: Biome (tabs, double quotes, semicolons)
@@ -23,11 +24,11 @@ An AI-powered Swedish tax advisory system using RAG (Retrieval-Augmented Generat
 
 ```
 src/
-├── config/env.ts          # Zod-validated environment config
+├── config/env.ts          # Zod-validated environment config (LLM + RAG settings)
 ├── db/schema.ts           # Drizzle tables: documents, chunks, queries, users
 ├── db/client.ts           # Drizzle PostgreSQL client
 ├── scraping/
-│   ├── base-scraper.ts    # Abstract base with rate limiting + retry
+│   ├── base-scraper.ts    # Abstract base with rate limiting, retry, .meta.json sidecar
 │   ├── skatteverket-scraper.ts
 │   ├── lagrummet-client.ts
 │   └── riksdagen-client.ts
@@ -35,18 +36,36 @@ src/
 │   ├── pdf-parser.ts      # PDF → clean text
 │   ├── chunker.ts         # Text → chunks (Swedish legal separators)
 │   ├── embedder.ts        # Chunks → OpenAI embeddings
-│   └── indexer.ts         # Embeddings → Qdrant
+│   └── indexer.ts         # Embeddings → Qdrant (includes filtered search)
 ├── workers/
 │   └── document-processor.ts  # BullMQ worker: parse → chunk → embed → index
+├── core/
+│   ├── types.ts           # Shared RAG types (RetrievedChunk, RAGResponse, etc.)
+│   ├── llm/
+│   │   ├── llm-provider.ts      # LLMProvider interface
+│   │   ├── openai-provider.ts   # OpenAI GPT-4o
+│   │   ├── anthropic-provider.ts # Anthropic Claude
+│   │   └── llm-factory.ts       # Factory + cached singleton
+│   ├── retriever.ts       # Query embed → Qdrant filtered search → RetrievedChunk[]
+│   ├── reranker.ts        # Cohere rerank-multilingual-v3.0
+│   ├── context-assembler.ts # Dedup, doc-grouped ordering, token budget
+│   ├── prompts.ts         # Swedish tax system/user/eval prompts
+│   ├── rag-pipeline.ts    # Orchestrator: retrieve → rerank → assemble → generate
+│   └── evaluation/
+│       ├── types.ts              # Eval types (EvaluationSummary, etc.)
+│       ├── test-questions.ts     # 17 Swedish tax test questions
+│       ├── relevance-scorer.ts   # LLM-based chunk relevance scoring
+│       ├── faithfulness-checker.ts # LLM-based answer grounding check
+│       ├── metrics.ts            # Citation accuracy, keyword coverage, precision
+│       └── runner.ts             # Eval orchestrator + CLI entry point
 ├── api/
 │   ├── routes/health.ts
-│   ├── routes/query.ts    # Placeholder (Phase 3)
+│   ├── routes/query.ts    # POST /api/query — full RAG pipeline
 │   └── middleware/error-handler.ts
-├── core/                  # RAG pipeline (Phase 2)
 └── index.ts               # Hono server entry point
 scripts/
 ├── scrape-all.ts          # CLI: bun run scrape --target <name> --limit <n>
-└── process-documents.ts   # CLI: bun run process
+└── process-documents.ts   # CLI: bun run process (reads .meta.json for title/source)
 ```
 
 ## Commands
@@ -56,6 +75,7 @@ bun run dev          # Start dev server (port 3000, --watch)
 bun run scrape       # Run scrapers (--target skatteverket|lagrummet|riksdagen|all --limit N)
 bun run process      # Process raw documents → chunks → embeddings → Qdrant
 bun run worker       # Start BullMQ document processing worker
+bun run eval         # Run RAG evaluation suite (17 test questions)
 bun run db:generate  # Generate Drizzle migrations
 bun run db:migrate   # Run Drizzle migrations
 bun run lint         # Biome check
@@ -65,13 +85,30 @@ docker compose up -d # Start Qdrant, PostgreSQL, Redis
 
 ## Key Patterns
 
-- **Environment**: All config via Zod-validated `env.ts` — crashes on startup if invalid
-- **Scrapers**: Extend `BaseScraper` — automatic rate limiting (2-3s), retry (3x), User-Agent header
+- **Environment**: All config via Zod-validated `env.ts` with `.refine()` for conditional keys — crashes on startup if invalid
+- **Scrapers**: Extend `BaseScraper` — automatic rate limiting (2-3s), retry (3x), User-Agent header, `.meta.json` sidecar files for title/source/URL metadata
 - **Chunking**: Swedish legal separators: `§`, `Kap.`, `Kapitel`, `Avdelning`, `Avsnitt`
 - **Embedding**: Batched (100/batch), OpenAI text-embedding-3-large at 1536 dimensions
-- **Indexing**: Qdrant upsert in batches of 100, cosine distance
+- **Indexing**: Qdrant upsert in batches of 100, cosine distance, metadata filter support (source, documentId)
+- **RAG pipeline**: retrieve (top-K=20) → rerank (Cohere, top-N=5) → assemble (dedup, token budget=6000) → generate (LLM with Swedish tax system prompt) → cite sources as [Källa N]
+- **LLM providers**: Factory pattern with cached singleton; switch via `LLM_PROVIDER=openai|anthropic`
 - **Worker pipeline**: download → parse → chunk → embed → index (BullMQ, concurrency 2)
 - **Server**: Hono with `export default { port, fetch: app.fetch }` pattern for Bun
+
+## API
+
+### POST /api/query
+```json
+{
+  "question": "Hur beskattas kapitalvinst vid bostadsförsäljning?",
+  "topK": 20,
+  "rerankerTopN": 5,
+  "tokenBudget": 6000,
+  "temperature": 0.1,
+  "filters": { "source": ["riksdagen"], "documentId": [] }
+}
+```
+Returns: `{ answer, citations, timings, metadata }`
 
 ## Data Sources
 
@@ -79,17 +116,20 @@ docker compose up -d # Start Qdrant, PostgreSQL, Redis
 |--------|------|--------|
 | Skatteverket | Ställningstaganden, handledningar | HTML, PDF |
 | Lagrummet | HFD tax court cases | JSON/Atom feed, PDF |
-| Riksdagen | Tax propositions (prop), SOU reports | JSON API, PDF |
+| Riksdagen | Tax propositions (prop), SOU reports | JSON API, HTML |
 
 ## Current Status
 
 **Phase 1: COMPLETE** — Scaffolding + data collection pipeline
+**Phase 2: COMPLETE** — RAG pipeline core (LLM providers, retriever, reranker, context assembler, prompts, orchestrator, query endpoint, evaluation framework)
 
 ## Known Issues
 
-- Skatteverket scraper CSS selectors need tuning to match actual site structure
+- Skatteverket scraper CSS selectors need tuning to match actual site structure (returns 0 documents)
+- Lagrummet API (`data.lagrummet.se`) is intermittently unreachable
 - `bun.lock` (not `bun.lockb`) is the lockfile format for Bun 1.3.9
 - PATH must include `$HOME/.bun/bin` explicitly when running from scripts
+- Port 3000 and 5000 often occupied on macOS — use `PORT=4000` as alternative
 
 ## Conventions
 
