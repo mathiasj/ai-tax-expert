@@ -6,3 +6,5 @@ data/processed/
 *.log
 .DS_Store
 bun.lockb
+frontend/dist/
+frontend/.env

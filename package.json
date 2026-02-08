@@ -18,7 +18,11 @@
     "format": "biome format --write src/",
     "test": "bun test",
     "check": "bun run lint && bun run test",
-    "eval": "bun run src/core/evaluation/runner.ts"
+    "eval": "bun run src/core/evaluation/runner.ts",
+    "frontend:dev": "cd frontend && bun run vite",
+    "frontend:build": "cd frontend && bun run vite build",
+    "frontend:preview": "cd frontend && bun run vite preview",
+    "dev:all": "bun run dev & bun run frontend:dev"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
