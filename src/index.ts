@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import pino from "pino";
+import { optionalAuth } from "./api/middleware/auth.js";
 import { errorHandler } from "./api/middleware/error-handler.js";
+import { auth } from "./api/routes/auth.js";
 import { health } from "./api/routes/health.js";
 import { query } from "./api/routes/query.js";
 
@@ -14,9 +16,11 @@ const app = new Hono();
 app.use("*", honoLogger());
 app.use("*", cors());
 app.use("*", errorHandler);
+app.use("/api/*", optionalAuth);
 
 // Routes
 app.route("/", health);
+app.route("/api", auth);
 app.route("/api", query);
 
 // Root
