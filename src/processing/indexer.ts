@@ -95,3 +95,43 @@ export async function searchSimilar(
 		payload: (r.payload ?? {}) as Record<string, unknown>,
 	}));
 }
+
+export interface QdrantFilter {
+	source?: string[];
+	documentId?: string[];
+}
+
+export async function searchSimilarFiltered(
+	queryEmbedding: number[],
+	limit = 20,
+	filter?: QdrantFilter,
+): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> {
+	const client = getClient();
+
+	const mustConditions: Array<Record<string, unknown>> = [];
+	if (filter?.source?.length) {
+		mustConditions.push({
+			key: "source",
+			match: { any: filter.source },
+		});
+	}
+	if (filter?.documentId?.length) {
+		mustConditions.push({
+			key: "documentId",
+			match: { any: filter.documentId },
+		});
+	}
+
+	const results = await client.search(env.QDRANT_COLLECTION, {
+		vector: queryEmbedding,
+		limit,
+		with_payload: true,
+		filter: mustConditions.length > 0 ? { must: mustConditions } : undefined,
+	});
+
+	return results.map((r) => ({
+		id: String(r.id),
+		score: r.score,
+		payload: (r.payload ?? {}) as Record<string, unknown>,
+	}));
+}
