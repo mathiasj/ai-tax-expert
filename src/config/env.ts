@@ -29,6 +29,17 @@ const envSchema = z
 		LLM_MAX_TOKENS: z.coerce.number().default(4096),
 		LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.1),
 
+		// Auth config
+		JWT_SECRET: z.string().min(32),
+		JWT_EXPIRES_IN: z.string().default("7d"),
+
+		// Cache config
+		CACHE_TTL_SECONDS: z.coerce.number().default(3600),
+
+		// Rate limiting
+		RATE_LIMIT_ANONYMOUS: z.coerce.number().default(10),
+		RATE_LIMIT_AUTHENTICATED: z.coerce.number().default(60),
+
 		// RAG config
 		RERANKER_TOP_N: z.coerce.number().default(5),
 		RAG_TOP_K: z.coerce.number().default(20),
