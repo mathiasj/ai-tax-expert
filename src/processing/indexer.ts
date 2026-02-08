@@ -108,6 +108,8 @@ export async function searchSimilarFiltered(
 ): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> {
 	const client = getClient();
 
+	await ensureCollection();
+
 	const mustConditions: Array<Record<string, unknown>> = [];
 	if (filter?.source?.length) {
 		mustConditions.push({

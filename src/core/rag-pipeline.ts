@@ -48,10 +48,12 @@ export async function executeRAGQuery(
 	// 4. Generate answer
 	const generationStart = performance.now();
 	const llm = getLLMProvider();
+	const contextText =
+		context.contextText || "Inga relevanta källor hittades i databasen.";
 	const result = await llm.complete({
 		messages: [
 			{ role: "system", content: SYSTEM_PROMPT_SWEDISH_TAX },
-			{ role: "user", content: buildUserPrompt(question, context.contextText) },
+			{ role: "user", content: buildUserPrompt(question, contextText) },
 		],
 		temperature: options?.temperature,
 	});
