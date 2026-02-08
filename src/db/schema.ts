@@ -42,19 +42,31 @@ export const chunks = pgTable("chunks", {
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const queries = pgTable("queries", {
-	id: uuid("id").primaryKey().defaultRandom(),
-	userId: uuid("user_id").references(() => users.id),
-	question: text("question").notNull(),
-	answer: text("answer"),
-	sourceChunkIds: uuid("source_chunk_ids").array(),
-	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-	createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
 export const users = pgTable("users", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	email: varchar("email", { length: 255 }).unique(),
 	name: varchar("name", { length: 255 }),
+	passwordHash: text("password_hash"),
+	role: varchar("role", { length: 50 }).notNull().default("user"),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const conversations = pgTable("conversations", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	userId: uuid("user_id").references(() => users.id),
+	title: varchar("title", { length: 500 }),
+	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+	updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const queries = pgTable("queries", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	userId: uuid("user_id").references(() => users.id),
+	conversationId: uuid("conversation_id").references(() => conversations.id),
+	question: text("question").notNull(),
+	answer: text("answer"),
+	sourceChunkIds: uuid("source_chunk_ids").array(),
+	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });
