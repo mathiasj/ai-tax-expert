@@ -17,6 +17,22 @@ FORMAT:
 - Citera alltid minst en källa per påstående
 - Om flera källor stödjer samma påstående, ange alla relevanta källor`;
 
+export interface PromptMessage {
+	role: "system" | "user" | "assistant";
+	content: string;
+}
+
+export function buildConversationMessages(
+	history: Array<{ question: string; answer: string }>,
+): PromptMessage[] {
+	const messages: PromptMessage[] = [];
+	for (const turn of history) {
+		messages.push({ role: "user", content: turn.question });
+		messages.push({ role: "assistant", content: turn.answer });
+	}
+	return messages;
+}
+
 export function buildUserPrompt(question: string, context: string): string {
 	return `KONTEXT (källor att basera svaret på):
 

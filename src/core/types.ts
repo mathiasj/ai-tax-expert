@@ -42,11 +42,18 @@ export interface RAGResponse {
 	rankedChunks: RankedChunk[];
 	context: AssembledContext;
 	timings: RAGTimings;
+	conversationId?: string;
+	cached?: boolean;
 }
 
 export interface MetadataFilter {
 	source?: string[];
 	documentId?: string[];
+}
+
+export interface ConversationTurn {
+	question: string;
+	answer: string;
 }
 
 export interface RAGOptions {
@@ -55,4 +62,6 @@ export interface RAGOptions {
 	tokenBudget?: number;
 	filters?: MetadataFilter;
 	temperature?: number;
+	conversationId?: string;
+	userId?: string;
 }

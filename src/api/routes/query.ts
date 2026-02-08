@@ -10,6 +10,7 @@ const querySchema = z.object({
 	rerankerTopN: z.number().int().min(1).max(50).optional(),
 	tokenBudget: z.number().int().min(500).max(20000).optional(),
 	temperature: z.number().min(0).max(2).optional(),
+	conversationId: z.string().uuid().optional(),
 	filters: z
 		.object({
 			source: z.array(z.string()).optional(),
@@ -26,13 +27,20 @@ query.post("/query", async (c) => {
 		return c.json({ error: "Invalid request", details: parsed.error.format() }, 400);
 	}
 
-	const { question, ...options } = parsed.data;
+	const { question, conversationId, ...rest } = parsed.data;
+	const user = c.get("user");
 
-	const response = await executeRAGQuery(question, options);
+	const response = await executeRAGQuery(question, {
+		...rest,
+		conversationId,
+		userId: user?.sub,
+	});
 
 	return c.json({
 		answer: response.answer,
 		citations: response.citations,
+		conversationId: response.conversationId,
+		cached: response.cached ?? false,
 		timings: response.timings,
 		metadata: {
 			retrievedCount: response.retrievedChunks.length,
