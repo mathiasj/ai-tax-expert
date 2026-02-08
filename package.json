@@ -22,7 +22,8 @@
     "frontend:dev": "cd frontend && bun run vite",
     "frontend:build": "cd frontend && bun run vite build",
     "frontend:preview": "cd frontend && bun run vite preview",
-    "dev:all": "bun run dev & bun run frontend:dev"
+    "dev:all": "bun run dev & bun run frontend:dev",
+    "build:all": "bun run frontend:build && bun build src/index.ts --outdir dist --target bun"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",

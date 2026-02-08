@@ -15,6 +15,13 @@
       "when": 1770586862284,
       "tag": "0001_tiresome_raider",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770593641389,
+      "tag": "0002_bored_blink",
+      "breakpoints": true
     }
   ]
 }

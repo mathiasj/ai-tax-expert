@@ -14,19 +14,17 @@ export function ChatContainer() {
 	const [sourceFilters, setSourceFilters] = useState<string[]>([]);
 	const [backendConversationId, setBackendConversationId] = useState<string | undefined>();
 	const { sendQuery, isLoading } = useQueryMutation();
-	const { conversations, addConversation, updateConversation, getConversation } =
+	const { conversations, addConversation, updateConversation, loadConversationMessages } =
 		useConversations();
 
 	const loadConversation = useCallback(
-		(id: string) => {
-			const conv = getConversation(id);
-			if (conv) {
-				setActiveConversationId(id);
-				setMessages(conv.messages);
-				setBackendConversationId(id);
-			}
+		async (id: string) => {
+			const msgs = await loadConversationMessages(id);
+			setActiveConversationId(id);
+			setMessages(msgs);
+			setBackendConversationId(id);
 		},
-		[getConversation],
+		[loadConversationMessages],
 	);
 
 	const startNewConversation = useCallback(() => {

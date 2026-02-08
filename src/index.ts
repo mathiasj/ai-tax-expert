@@ -1,4 +1,7 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
 import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import pino from "pino";
@@ -7,6 +10,9 @@ import { errorHandler } from "./api/middleware/error-handler.js";
 import { rateLimiter } from "./api/middleware/rate-limiter.js";
 import { analytics } from "./api/routes/analytics.js";
 import { auth } from "./api/routes/auth.js";
+import { convRouter } from "./api/routes/conversations.js";
+import { docs } from "./api/routes/documents.js";
+import { evaluation } from "./api/routes/evaluation.js";
 import { health } from "./api/routes/health.js";
 import { query } from "./api/routes/query.js";
 
@@ -26,15 +32,32 @@ app.route("/", health);
 app.route("/api", auth);
 app.route("/api", query);
 app.route("/api", analytics);
+app.route("/api", docs);
+app.route("/api", convRouter);
+app.route("/api", evaluation);
 
-// Root
-app.get("/", (c) => {
-	return c.json({
-		name: "SkatteAssistenten API",
-		version: "0.1.0",
-		docs: "/health",
+// Static file serving (SPA)
+const distPath = join(import.meta.dir, "../frontend/dist");
+const hasDistDir = existsSync(distPath);
+
+if (hasDistDir) {
+	log.info({ distPath }, "Serving frontend static files");
+
+	app.use("/assets/*", serveStatic({ root: "./frontend/dist" }));
+	app.use("/favicon.svg", serveStatic({ path: "./frontend/dist/favicon.svg" }));
+
+	// SPA fallback — serve index.html for non-API routes
+	app.get("*", serveStatic({ path: "./frontend/dist/index.html" }));
+} else {
+	// Root — API info (no frontend build available)
+	app.get("/", (c) => {
+		return c.json({
+			name: "SkatteAssistenten API",
+			version: "0.1.0",
+			docs: "/health",
+		});
 	});
-});
+}
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 

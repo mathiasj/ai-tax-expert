@@ -79,4 +79,29 @@ auth.get("/auth/me", requireAuth, async (c) => {
 	return c.json({ user });
 });
 
+const updateProfileSchema = z.object({
+	name: z.string().max(255).min(1),
+});
+
+auth.patch("/auth/me", requireAuth, async (c) => {
+	const user = c.get("user")!;
+	const body = await c.req.json();
+	const parsed = updateProfileSchema.safeParse(body);
+	if (!parsed.success) {
+		return c.json({ error: "Invalid request", details: parsed.error.format() }, 400);
+	}
+
+	const [updated] = await db
+		.update(users)
+		.set({ name: parsed.data.name })
+		.where(eq(users.id, user.sub))
+		.returning({ id: users.id, email: users.email, role: users.role, name: users.name });
+
+	if (!updated) {
+		return c.json({ error: "User not found" }, 404);
+	}
+
+	return c.json({ user: updated });
+});
+
 export { auth };

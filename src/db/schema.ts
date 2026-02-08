@@ -1,4 +1,4 @@
-import { integer, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 export const documentSourceEnum = pgEnum("document_source", [
 	"skatteverket",
@@ -68,5 +68,20 @@ export const queries = pgTable("queries", {
 	answer: text("answer"),
 	sourceChunkIds: uuid("source_chunk_ids").array(),
 	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const evaluationRuns = pgTable("evaluation_runs", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	totalQuestions: integer("total_questions").notNull(),
+	avgRelevance: numeric("avg_relevance", { precision: 5, scale: 4 }).notNull(),
+	avgFaithfulness: numeric("avg_faithfulness", { precision: 5, scale: 4 }).notNull(),
+	avgCitationAccuracy: numeric("avg_citation_accuracy", { precision: 5, scale: 4 }).notNull(),
+	avgKeywordCoverage: numeric("avg_keyword_coverage", { precision: 5, scale: 4 }).notNull(),
+	avgRetrievalMs: numeric("avg_retrieval_ms", { precision: 10, scale: 2 }).notNull(),
+	avgTotalMs: numeric("avg_total_ms", { precision: 10, scale: 2 }).notNull(),
+	byCategory: jsonb("by_category").$type<Record<string, unknown>>().notNull(),
+	byDifficulty: jsonb("by_difficulty").$type<Record<string, unknown>>().notNull(),
+	results: jsonb("results").$type<unknown[]>().notNull(),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });

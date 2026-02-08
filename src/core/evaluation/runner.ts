@@ -1,4 +1,6 @@
 import pino from "pino";
+import { db } from "../../db/client.js";
+import { evaluationRuns } from "../../db/schema.js";
 import { executeRAGQuery } from "../rag-pipeline.js";
 import { checkFaithfulness } from "./faithfulness-checker.js";
 import { computeCitationAccuracy, computeKeywordCoverage } from "./metrics.js";
@@ -59,8 +61,25 @@ function summarizeCategory(results: QuestionEvalResult[]): CategorySummary {
 	};
 }
 
+async function persistResults(summary: EvaluationSummary): Promise<void> {
+	await db.insert(evaluationRuns).values({
+		totalQuestions: summary.totalQuestions,
+		avgRelevance: summary.avgRelevance.toString(),
+		avgFaithfulness: summary.avgFaithfulness.toString(),
+		avgCitationAccuracy: summary.avgCitationAccuracy.toString(),
+		avgKeywordCoverage: summary.avgKeywordCoverage.toString(),
+		avgRetrievalMs: summary.avgRetrievalMs.toString(),
+		avgTotalMs: summary.avgTotalMs.toString(),
+		byCategory: summary.byCategory as Record<string, unknown>,
+		byDifficulty: summary.byDifficulty as Record<string, unknown>,
+		results: summary.results as unknown[],
+	});
+	logger.info("Evaluation results persisted to database");
+}
+
 export async function runEvaluation(
 	questions?: TestQuestion[],
+	options?: { persist?: boolean },
 ): Promise<EvaluationSummary> {
 	const testQuestions = questions ?? TEST_QUESTIONS;
 	const results: QuestionEvalResult[] = [];
@@ -129,6 +148,10 @@ export async function runEvaluation(
 
 	printSummary(summary);
 
+	if (options?.persist) {
+		await persistResults(summary);
+	}
+
 	return summary;
 }
 
@@ -163,7 +186,7 @@ function printSummary(summary: EvaluationSummary): void {
 
 // CLI entry point
 if (import.meta.main) {
-	runEvaluation()
+	runEvaluation(undefined, { persist: true })
 		.then(() => process.exit(0))
 		.catch((err) => {
 			console.error("Evaluation failed:", err);

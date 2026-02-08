@@ -69,3 +69,76 @@ export interface PopularQuestion {
 	question: string;
 	count: number;
 }
+
+export interface DocumentInfo {
+	id: string;
+	title: string;
+	source: string;
+	sourceUrl: string | null;
+	status: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface DocumentsResponse {
+	documents: DocumentInfo[];
+	total: number;
+}
+
+export interface ConversationListItem {
+	id: string;
+	title: string | null;
+	createdAt: string;
+	updatedAt: string;
+	messageCount: number;
+}
+
+export interface ConversationsResponse {
+	conversations: ConversationListItem[];
+}
+
+export interface ConversationMessage {
+	id: string;
+	question: string;
+	answer: string | null;
+	metadata: Record<string, unknown> | null;
+	createdAt: string;
+}
+
+export interface ConversationMessagesResponse {
+	messages: ConversationMessage[];
+}
+
+export interface EvalRunResponse {
+	id: string;
+	totalQuestions: number;
+	avgRelevance: number;
+	avgFaithfulness: number;
+	avgCitationAccuracy: number;
+	avgKeywordCoverage: number;
+	avgRetrievalMs: number;
+	avgTotalMs: number;
+	byCategory: Record<string, { count: number; avgRelevance: number; avgFaithfulness: number; avgKeywordCoverage: number }>;
+	byDifficulty: Record<string, { count: number; avgRelevance: number; avgFaithfulness: number; avgKeywordCoverage: number }>;
+	results: EvalQuestionResult[];
+	createdAt: string;
+}
+
+export interface EvalQuestionResult {
+	questionId: string;
+	question: string;
+	category: string;
+	difficulty: string;
+	faithfulness: { score: number };
+	citationAccuracy: number;
+	keywordCoverage: number;
+	relevanceScores: { score: number }[];
+}
+
+export interface UpdateProfileRequest {
+	name: string;
+}
+
+export interface UpdateProfileResponse {
+	user: UserInfo;
+}

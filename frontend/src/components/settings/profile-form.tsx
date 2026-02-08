@@ -1,11 +1,34 @@
 import { useState } from "react";
 import { useAuthContext } from "@/contexts/auth-context";
+import { api } from "@/lib/api-client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import type { UpdateProfileResponse } from "@/types/api";
 
 export function ProfileForm() {
-	const { user } = useAuthContext();
+	const { user, setUser } = useAuthContext();
 	const [name, setName] = useState(user?.name ?? "");
+	const [isSaving, setIsSaving] = useState(false);
+	const [message, setMessage] = useState<string | null>(null);
+
+	const hasChanged = name.trim() !== (user?.name ?? "");
+
+	const handleSave = async () => {
+		if (!hasChanged || !name.trim()) return;
+		setIsSaving(true);
+		setMessage(null);
+		try {
+			const res = await api.patch<UpdateProfileResponse>("/api/auth/me", {
+				name: name.trim(),
+			});
+			setUser(res.user);
+			setMessage("Profilen har uppdaterats");
+		} catch {
+			setMessage("Kunde inte spara profilen");
+		} finally {
+			setIsSaving(false);
+		}
+	};
 
 	return (
 		<div className="space-y-4">
@@ -23,12 +46,12 @@ export function ProfileForm() {
 				onChange={(e) => setName(e.target.value)}
 				placeholder="Ditt namn"
 			/>
-			<Button disabled title="Profilredigering är inte tillgänglig ännu">
-				Spara
+			<Button disabled={!hasChanged || isSaving} onClick={handleSave}>
+				{isSaving ? "Sparar..." : "Spara"}
 			</Button>
-			<p className="text-xs text-gray-400 dark:text-gray-500">
-				Profilredigering kommer i en framtida uppdatering.
-			</p>
+			{message && (
+				<p className="text-xs text-gray-500 dark:text-gray-400">{message}</p>
+			)}
 		</div>
 	);
 }
