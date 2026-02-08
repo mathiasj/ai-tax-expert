@@ -4,13 +4,26 @@ import { queries } from "../db/schema.js";
 import { getCache, queryCacheKey, setCache } from "./cache.js";
 import { assembleContext } from "./context-assembler.js";
 import { createConversation, getConversationHistory } from "./conversation.js";
+import { FALLBACK_LLM_DOWN, FALLBACK_RETRIEVAL_DOWN } from "./fallbacks.js";
 import { getLLMProvider } from "./llm/llm-factory.js";
 import { buildConversationMessages, buildUserPrompt, SYSTEM_PROMPT_SWEDISH_TAX } from "./prompts.js";
 import { rerankChunks } from "./reranker.js";
 import { retrieveChunks } from "./retriever.js";
-import type { RAGOptions, RAGResponse, RAGTimings, SourceCitation } from "./types.js";
+import type { AssembledContext, RAGOptions, RAGResponse, RAGTimings, RankedChunk, RetrievedChunk, SourceCitation } from "./types.js";
 
 const logger = pino({ name: "rag-pipeline" });
+
+function buildEmptyResponse(answer: string, conversationId?: string): RAGResponse {
+	return {
+		answer,
+		citations: [],
+		retrievedChunks: [],
+		rankedChunks: [],
+		context: { chunks: [], contextText: "", totalTokens: 0, droppedCount: 0 },
+		timings: { retrievalMs: 0, rerankMs: 0, assemblyMs: 0, generationMs: 0, totalMs: 0 },
+		conversationId,
+	};
+}
 
 export async function executeRAGQuery(
 	question: string,
@@ -41,56 +54,55 @@ export async function executeRAGQuery(
 	// Resolve conversation
 	let conversationId = options?.conversationId;
 	if (!conversationId) {
-		conversationId = await createConversation(options?.userId);
+		try {
+			conversationId = await createConversation(options?.userId);
+		} catch (err) {
+			logger.error({ err }, "Failed to create conversation");
+		}
 	}
 
 	// 1. Retrieve chunks
-	const retrievalStart = performance.now();
-	const retrievedChunks = await retrieveChunks(question, {
-		topK: options?.topK,
-		filters: options?.filters,
-	});
-	timings.retrievalMs = Math.round(performance.now() - retrievalStart);
-
-	// 2. Rerank
-	const rerankStart = performance.now();
-	const rankedChunks = await rerankChunks(
-		question,
-		retrievedChunks,
-		options?.rerankerTopN,
-	);
-	timings.rerankMs = Math.round(performance.now() - rerankStart);
-
-	// 3. Assemble context
-	const assemblyStart = performance.now();
-	const context = assembleContext(rankedChunks, options?.tokenBudget);
-	timings.assemblyMs = Math.round(performance.now() - assemblyStart);
-
-	// 4. Generate answer
-	const generationStart = performance.now();
-	const llm = getLLMProvider();
-	const contextText =
-		context.contextText || "Inga relevanta källor hittades i databasen.";
-
-	// Build messages with conversation history
-	const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-		{ role: "system", content: SYSTEM_PROMPT_SWEDISH_TAX },
-	];
-
-	if (options?.conversationId) {
-		const history = await getConversationHistory(options.conversationId);
-		messages.push(...buildConversationMessages(history));
+	let retrievedChunks: RetrievedChunk[];
+	try {
+		const retrievalStart = performance.now();
+		retrievedChunks = await retrieveChunks(question, {
+			topK: options?.topK,
+			filters: options?.filters,
+		});
+		timings.retrievalMs = Math.round(performance.now() - retrievalStart);
+	} catch (err) {
+		logger.error({ err }, "Retrieval failed — returning fallback");
+		timings.totalMs = Math.round(performance.now() - totalStart);
+		return buildEmptyResponse(FALLBACK_RETRIEVAL_DOWN, conversationId);
 	}
 
-	messages.push({ role: "user", content: buildUserPrompt(question, contextText) });
+	// 2. Rerank (graceful degradation: skip reranking on failure)
+	let rankedChunks: RankedChunk[];
+	try {
+		const rerankStart = performance.now();
+		rankedChunks = await rerankChunks(
+			question,
+			retrievedChunks,
+			options?.rerankerTopN,
+		);
+		timings.rerankMs = Math.round(performance.now() - rerankStart);
+	} catch (err) {
+		logger.warn({ err }, "Reranker failed — using vector scores");
+		rankedChunks = retrievedChunks.map((c) => ({ ...c, rerankScore: c.score }));
+	}
 
-	const result = await llm.complete({
-		messages,
-		temperature: options?.temperature,
-	});
-	timings.generationMs = Math.round(performance.now() - generationStart);
+	// 3. Assemble context
+	let context: AssembledContext;
+	try {
+		const assemblyStart = performance.now();
+		context = assembleContext(rankedChunks, options?.tokenBudget);
+		timings.assemblyMs = Math.round(performance.now() - assemblyStart);
+	} catch (err) {
+		logger.error({ err }, "Context assembly failed");
+		context = { chunks: [], contextText: "", totalTokens: 0, droppedCount: 0 };
+	}
 
-	// 5. Build citations
+	// 5. Build citations (before LLM so we can return them even on LLM failure)
 	const citations: SourceCitation[] = context.chunks.map((chunk) => ({
 		chunkId: chunk.id,
 		documentId: chunk.documentId,
@@ -99,6 +111,48 @@ export async function executeRAGQuery(
 		section: (chunk.metadata.section as string) ?? null,
 		relevanceScore: chunk.rerankScore,
 	}));
+
+	// 4. Generate answer
+	let answerContent: string;
+	let usage: Record<string, number> | undefined;
+	let llmName = "unknown";
+	let llmModel = "unknown";
+	try {
+		const generationStart = performance.now();
+		const llm = getLLMProvider();
+		llmName = llm.name;
+		llmModel = llm.model;
+		const contextText =
+			context.contextText || "Inga relevanta källor hittades i databasen.";
+
+		// Build messages with conversation history
+		const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+			{ role: "system", content: SYSTEM_PROMPT_SWEDISH_TAX },
+		];
+
+		if (options?.conversationId) {
+			try {
+				const history = await getConversationHistory(options.conversationId);
+				messages.push(...buildConversationMessages(history));
+			} catch (err) {
+				logger.warn({ err }, "Failed to fetch conversation history");
+			}
+		}
+
+		messages.push({ role: "user", content: buildUserPrompt(question, contextText) });
+
+		const result = await llm.complete({
+			messages,
+			temperature: options?.temperature,
+		});
+		answerContent = result.content;
+		usage = result.usage as unknown as Record<string, number>;
+		timings.generationMs = Math.round(performance.now() - generationStart);
+	} catch (err) {
+		logger.error({ err }, "LLM generation failed — returning fallback with citations");
+		answerContent = FALLBACK_LLM_DOWN;
+		timings.generationMs = 0;
+	}
 
 	timings.totalMs = Math.round(performance.now() - totalStart);
 
@@ -109,8 +163,8 @@ export async function executeRAGQuery(
 			retrieved: retrievedChunks.length,
 			reranked: rankedChunks.length,
 			contextChunks: context.chunks.length,
-			provider: llm.name,
-			model: llm.model,
+			provider: llmName,
+			model: llmModel,
 			timings,
 		},
 		"RAG query completed",
@@ -120,21 +174,21 @@ export async function executeRAGQuery(
 	db.insert(queries)
 		.values({
 			question,
-			answer: result.content,
+			answer: answerContent,
 			conversationId,
 			userId: options?.userId,
 			sourceChunkIds: context.chunks.map((c) => c.id),
 			metadata: {
-				provider: llm.name,
-				model: llm.model,
+				provider: llmName,
+				model: llmModel,
 				timings,
-				usage: result.usage,
+				usage,
 			},
 		})
 		.catch((err) => logger.error({ err }, "Failed to log query"));
 
 	const response: RAGResponse = {
-		answer: result.content,
+		answer: answerContent,
 		citations,
 		retrievedChunks,
 		rankedChunks,
@@ -143,13 +197,15 @@ export async function executeRAGQuery(
 		conversationId,
 	};
 
-	// Cache the result (only for non-conversation queries)
-	if (!options?.conversationId) {
+	// Cache the result (only for non-conversation queries, skip on fallback answers)
+	if (!options?.conversationId && answerContent !== FALLBACK_LLM_DOWN) {
 		const cacheKey = queryCacheKey(question, {
 			topK: options?.topK,
 			filters: options?.filters as Record<string, unknown> | undefined,
 		});
-		await setCache(cacheKey, response);
+		setCache(cacheKey, response).catch((err) =>
+			logger.warn({ err }, "Failed to cache response"),
+		);
 	}
 
 	return response;
