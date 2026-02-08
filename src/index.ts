@@ -4,6 +4,7 @@ import { logger as honoLogger } from "hono/logger";
 import pino from "pino";
 import { optionalAuth } from "./api/middleware/auth.js";
 import { errorHandler } from "./api/middleware/error-handler.js";
+import { rateLimiter } from "./api/middleware/rate-limiter.js";
 import { auth } from "./api/routes/auth.js";
 import { health } from "./api/routes/health.js";
 import { query } from "./api/routes/query.js";
@@ -17,6 +18,7 @@ app.use("*", honoLogger());
 app.use("*", cors());
 app.use("*", errorHandler);
 app.use("/api/*", optionalAuth);
+app.use("/api/*", rateLimiter);
 
 // Routes
 app.route("/", health);
