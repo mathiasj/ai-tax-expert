@@ -5,6 +5,7 @@ import pino from "pino";
 import { optionalAuth } from "./api/middleware/auth.js";
 import { errorHandler } from "./api/middleware/error-handler.js";
 import { rateLimiter } from "./api/middleware/rate-limiter.js";
+import { analytics } from "./api/routes/analytics.js";
 import { auth } from "./api/routes/auth.js";
 import { health } from "./api/routes/health.js";
 import { query } from "./api/routes/query.js";
@@ -24,6 +25,7 @@ app.use("/api/*", rateLimiter);
 app.route("/", health);
 app.route("/api", auth);
 app.route("/api", query);
+app.route("/api", analytics);
 
 // Root
 app.get("/", (c) => {
