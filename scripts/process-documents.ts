@@ -1,5 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { join, extname, basename, dirname } from "node:path";
 import { parsePdf, parseTextFile } from "../src/processing/pdf-parser.js";
 import { chunkDocument } from "../src/processing/chunker.js";
 import { embedTexts } from "../src/processing/embedder.js";
@@ -7,6 +7,13 @@ import { indexPoints, type IndexPoint } from "../src/processing/indexer.js";
 import { v4 as uuidv4 } from "uuid";
 
 const RAW_DIR = "data/raw";
+
+interface FileMeta {
+	title: string;
+	sourceUrl: string;
+	source: string;
+	[key: string]: unknown;
+}
 
 async function collectFiles(dir: string): Promise<string[]> {
 	const files: string[] = [];
@@ -31,6 +38,23 @@ async function collectFiles(dir: string): Promise<string[]> {
 	return files;
 }
 
+async function loadMetadata(filePath: string): Promise<FileMeta> {
+	const metaPath = `${filePath}.meta.json`;
+	try {
+		const raw = await readFile(metaPath, "utf-8");
+		return JSON.parse(raw) as FileMeta;
+	} catch {
+		// Fallback: derive from file path
+		const source = basename(dirname(filePath));
+		const name = basename(filePath, extname(filePath));
+		return {
+			title: name.replace(/[_-]+/g, " ").replace(/^\w/, (c) => c.toUpperCase()),
+			sourceUrl: "",
+			source: source || "unknown",
+		};
+	}
+}
+
 async function main() {
 	console.log("Starting document processing pipeline...");
 
@@ -47,6 +71,10 @@ async function main() {
 		console.log(`\nProcessing: ${filePath}`);
 
 		try {
+			// 0. Load metadata
+			const meta = await loadMetadata(filePath);
+			console.log(`  Source: ${meta.source}, Title: ${meta.title.slice(0, 60)}`);
+
 			// 1. Parse
 			const ext = extname(filePath).toLowerCase();
 			const parsed = ext === ".pdf" ? await parsePdf(filePath) : await parseTextFile(filePath);
@@ -58,10 +86,11 @@ async function main() {
 
 			console.log(`  Parsed: ${parsed.text.length} chars, ${parsed.pageCount} pages`);
 
-			// 2. Chunk
+			// 2. Chunk — include title, source, sourceUrl in metadata
 			const chunks = await chunkDocument(parsed.text, {
-				filePath,
 				...parsed.metadata,
+				...meta,
+				filePath,
 			});
 			console.log(`  Chunked: ${chunks.length} chunks`);
 

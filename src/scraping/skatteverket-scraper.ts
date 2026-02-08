@@ -91,6 +91,7 @@ export class SkatteverketScraper extends BaseScraper {
 			const buffer = Buffer.from(await response.arrayBuffer());
 			const filename = `${section}_${sanitizeFilename(title)}.pdf`;
 			const filePath = await this.saveFile(filename, buffer);
+			await this.saveMetadata(filePath, { title, sourceUrl: url, source: "skatteverket", section });
 
 			return {
 				title,
@@ -112,6 +113,7 @@ export class SkatteverketScraper extends BaseScraper {
 
 		const filename = `${section}_${sanitizeFilename(title)}.txt`;
 		const filePath = await this.saveFile(filename, content);
+		await this.saveMetadata(filePath, { title, sourceUrl: url, source: "skatteverket", section });
 
 		return {
 			title,

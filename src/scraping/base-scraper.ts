@@ -82,4 +82,12 @@ export abstract class BaseScraper {
 		this.logger.info({ filePath }, "Saved file");
 		return filePath;
 	}
+
+	protected async saveMetadata(
+		filePath: string,
+		meta: { title: string; sourceUrl: string; source: string; [key: string]: unknown },
+	): Promise<void> {
+		const metaPath = `${filePath}.meta.json`;
+		await writeFile(metaPath, JSON.stringify(meta, null, 2));
+	}
 }

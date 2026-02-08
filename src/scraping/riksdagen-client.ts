@@ -82,10 +82,20 @@ export class RiksdagenClient extends BaseScraper {
 				const filename = `${item.doktyp}_${item.dok_id}.txt`;
 				const content = stripHtml(htmlContent);
 				const filePath = await this.saveFile(filename, content);
+				const sourceUrl = `https://www.riksdagen.se/sv/dokument-och-lagar/${item.dok_id}/`;
+				await this.saveMetadata(filePath, {
+					title: item.titel,
+					sourceUrl,
+					source: "riksdagen",
+					docId: item.dok_id,
+					docType: item.doktyp,
+					date: item.datum,
+					subtitle: item.undertitel,
+				});
 
 				return {
 					title: item.titel,
-					sourceUrl: `https://www.riksdagen.se/sv/dokument-och-lagar/${item.dok_id}/`,
+					sourceUrl,
 					content,
 					filePath,
 					metadata: {
@@ -108,6 +118,14 @@ export class RiksdagenClient extends BaseScraper {
 			const buffer = Buffer.from(await response.arrayBuffer());
 			const filename = `${item.doktyp}_${item.dok_id}.pdf`;
 			const filePath = await this.saveFile(filename, buffer);
+			await this.saveMetadata(filePath, {
+				title: item.titel,
+				sourceUrl: pdfAttachment.fil_url,
+				source: "riksdagen",
+				docId: item.dok_id,
+				docType: item.doktyp,
+				date: item.datum,
+			});
 
 			return {
 				title: item.titel,

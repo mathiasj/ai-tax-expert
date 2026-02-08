@@ -91,6 +91,14 @@ export class LagrummetClient extends BaseScraper {
 			filePath = await this.saveFile(filename, content);
 		}
 
+		await this.saveMetadata(filePath, {
+			title: entry.title,
+			sourceUrl: entry.url,
+			source: "lagrummet",
+			caseId: entry.id,
+			published: entry.published,
+		});
+
 		return {
 			title: entry.title,
 			sourceUrl: entry.url,
