@@ -136,6 +136,7 @@ bun run worker
 | `bun run process` | Process raw documents into Qdrant |
 | `bun run worker` | Start BullMQ document processing worker |
 | `bun run refresh-worker` | Start refresh scheduler (checks for stale documents) |
+| `bun run scrape-worker` | Start scrape scheduler (scrapes sources weekly) |
 | `bun run eval` | Run RAG evaluation suite (17 test questions) |
 | `bun run db:generate` | Generate Drizzle migrations |
 | `bun run db:migrate` | Run Drizzle migrations |
@@ -241,8 +242,10 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 - `GET /api/admin/queries` — Browse queries with feedback filter
 - `GET /api/admin/queries/stats` — Feedback statistics
 - `GET /api/admin/queries/:id` — Full query detail
-- `GET /api/admin/health` — System health (Qdrant/Redis/PG/BullMQ/Refresh Scheduler)
+- `GET /api/admin/health` — System health (Qdrant/Redis/PG/BullMQ/Refresh/Scrape Scheduler)
 - `POST /api/admin/refresh/trigger` — Manual refresh trigger
+- `POST /api/admin/scrape/trigger` — Trigger scrape job (`{ target, limit? }`)
+- `GET /api/admin/scrape/status` — Per-target scrape queue stats
 
 ## Frontend
 
@@ -250,7 +253,7 @@ The frontend runs at `http://localhost:5173` and proxies API requests to the bac
 
 - **Chat** (`/chat`) — Main chat interface with source filters, markdown answers, citation badges, and thumbs up/down feedback
 - **Dashboard** (`/dashboard`) — Analytics overview
-- **Admin** (`/admin`) — Separate admin dashboard (admin users only) for managing documents, sources, queries, and monitoring system health including the refresh scheduler
+- **Admin** (`/admin`) — Separate admin dashboard (admin users only) for managing documents, sources, queries, monitoring system health, and triggering refresh/scrape jobs
 
 ## Project Structure
 
@@ -273,9 +276,10 @@ src/
 │   ├── embedder.ts         # Chunks → OpenAI embeddings
 │   └── indexer.ts          # Embeddings → Qdrant (with metadata filters)
 ├── workers/
-│   ├── queue.ts            # Shared BullMQ queue instance
+│   ├── queue.ts            # Shared BullMQ queue + IORedis connection
 │   ├── document-processor.ts  # Worker: parse → classify → chunk → embed → index
-│   └── refresh-scheduler.ts   # Refresh scheduler: daily cron + manual trigger
+│   ├── refresh-scheduler.ts   # Refresh scheduler: daily cron + manual trigger
+│   └── scrape-scheduler.ts    # Scrape scheduler: weekly cron, health check → scrape → update sources
 ├── core/
 │   ├── types.ts            # Shared types (MetadataFilter, SourceCitation, etc.)
 │   ├── llm/                # LLM provider factory (OpenAI/Anthropic)
@@ -302,6 +306,32 @@ frontend/
 scripts/                    # CLI tools for scraping and processing
 ```
 
+## Production Deployment
+
+```bash
+# Build and start all services
+docker compose -f docker-compose.prod.yml up -d --build
+
+# Services started:
+#   - qdrant (vector DB)
+#   - postgres (relational DB)
+#   - redis (cache + queues)
+#   - backend (Hono API + frontend static files)
+#   - worker (document processing)
+#   - refresh-worker (stale document checker)
+#   - scrape-worker (scheduled scraping)
+```
+
+The production compose file uses the multi-stage `Dockerfile` which installs dependencies and copies source code (Bun runs TypeScript directly). All services have `restart: unless-stopped` and health checks. The backend runs migrations on startup.
+
+Graceful shutdown is handled via `SIGTERM`/`SIGINT` — all BullMQ queues and Redis connections are closed before exit.
+
+## CI/CD
+
+GitHub Actions runs on push/PR to `main`:
+- **lint-and-check**: Install deps, lint with Biome, build frontend
+- **build-docker**: Verify Docker image builds successfully
+
 ## Development Phases
 
 - **Phase 1** ✅ — Project scaffolding, scraping infra, processing pipeline, BullMQ worker, Hono API
@@ -311,6 +341,7 @@ scripts/                    # CLI tools for scraping and processing
 - **Phase 5** ✅ — Admin dashboard (documents/sources/queries CRUD, system health, user feedback)
 - **Phase 6** ✅ — Scraper fixes (all three scrapers working)
 - **Phase 7** ✅ — Metadata-enriched pipeline (docType/audience/taxArea classification, source hierarchy, refresh scheduler)
+- **Phase 8** ✅ — Production deploy + scheduled scraping (Docker, graceful shutdown, scrape scheduler, CI)
 
 ## License
 

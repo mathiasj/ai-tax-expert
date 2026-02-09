@@ -41,9 +41,10 @@ src/
 │   ├── embedder.ts        # Chunks → OpenAI embeddings
 │   └── indexer.ts         # Embeddings → Qdrant (filtered search by source, docType, audience, taxArea)
 ├── workers/
-│   ├── queue.ts               # Shared BullMQ queue instance (used by worker + admin routes)
+│   ├── queue.ts               # Shared BullMQ queue + IORedis connection (used by worker + admin routes + schedulers)
 │   ├── document-processor.ts  # BullMQ worker: parse → classify → chunk → embed → index (+ refresh support)
-│   └── refresh-scheduler.ts   # Refresh scheduler: daily cron + manual trigger, content hash comparison
+│   ├── refresh-scheduler.ts   # Refresh scheduler: daily cron + manual trigger, content hash comparison
+│   └── scrape-scheduler.ts    # Scrape scheduler: BullMQ queue, health check → scrape → update sources table, weekly cron
 ├── core/
 │   ├── types.ts           # Shared RAG types (RetrievedChunk, RAGResponse, etc.)
 │   ├── llm/
@@ -75,7 +76,7 @@ src/
 │   ├── routes/query.ts    # POST /api/query — full RAG pipeline, POST /api/queries/:id/feedback
 │   ├── routes/analytics.ts # GET /analytics/summary, /analytics/popular
 │   ├── routes/documents.ts # GET /api/documents — list with search/filter/chunkCount
-│   ├── routes/admin.ts    # /api/admin/* — documents CRUD, sources CRUD, queries/feedback, system health, refresh trigger
+│   ├── routes/admin.ts    # /api/admin/* — documents CRUD, sources CRUD, queries/feedback, system health, refresh/scrape trigger
 │   ├── middleware/auth.ts  # optionalAuth + requireAuth JWT middleware
 │   ├── middleware/admin.ts # requireAdmin (requireAuth + role === "admin")
 │   ├── middleware/rate-limiter.ts  # Redis sliding window per IP/user
@@ -129,7 +130,7 @@ frontend/
 │   │       ├── admin-documents-page.tsx  # /admin/documents — search, filter, detail drawer, CRUD
 │   │       ├── admin-sources-page.tsx    # /admin/sources — add/edit/delete source URLs
 │   │       ├── admin-queries-page.tsx    # /admin/queries — browse with feedback filter
-│   │       └── admin-system-page.tsx     # /admin/system — Qdrant/Redis/PG/BullMQ/Refresh health
+│   │       └── admin-system-page.tsx     # /admin/system — Qdrant/Redis/PG/BullMQ/Refresh/Scrape health
 │   └── data/
 │       └── sample-eval-results.ts  # Static eval data for stub page
 └── public/favicon.svg
@@ -147,12 +148,14 @@ bun run scrape         # Run scrapers (--target skatteverket|lagrummet|riksdagen
 bun run process        # Process raw documents → chunks → embeddings → Qdrant
 bun run worker         # Start BullMQ document processing worker
 bun run refresh-worker # Start refresh scheduler (checks for stale documents daily at 03:00)
+bun run scrape-worker  # Start scrape scheduler (scrapes sources weekly Monday 04:00)
 bun run eval           # Run RAG evaluation suite (17 test questions)
 bun run db:generate    # Generate Drizzle migrations
 bun run db:migrate     # Run Drizzle migrations
 bun run lint           # Biome check
 bun run test           # Bun test runner
-docker compose up -d   # Start Qdrant, PostgreSQL, Redis
+docker compose up -d                    # Start Qdrant, PostgreSQL, Redis (dev)
+docker compose -f docker-compose.prod.yml up -d  # Start all services (prod)
 ```
 
 ## Key Patterns
@@ -171,6 +174,8 @@ docker compose up -d   # Start Qdrant, PostgreSQL, Redis
 - **LLM providers**: Factory pattern with cached singleton; switch via `LLM_PROVIDER=openai|anthropic`
 - **Worker pipeline**: download → parse → classify → chunk → embed → index (BullMQ, concurrency 2); computes SHA-256 contentHash for change detection
 - **Refresh scheduler**: BullMQ repeatable job (daily 03:00) checks documents with `refreshPolicy != "once"` and stale `lastCheckedAt`; re-queues for processing; skips unchanged content via hash comparison
+- **Scrape scheduler**: BullMQ `scrape-jobs` queue (concurrency 1); weekly cron (default Monday 04:00 via `SCRAPE_SCHEDULE_CRON`); health check → scrape → update `sources.lastScrapedAt`; admin API trigger + status; configurable via `SCRAPE_SCHEDULE_ENABLED`, `SCRAPE_DEFAULT_LIMIT`
+- **Graceful shutdown**: `SIGTERM`/`SIGINT` handlers in `src/index.ts` close all BullMQ queues + Redis connection before exit
 - **Auth**: JWT (Hono HS256) + Bun.password (argon2id); `optionalAuth` on all `/api/*`, `requireAuth` on analytics, `requireAdmin` on `/api/admin/*`
 - **Admin**: Separate admin section (`/admin/*`) with own layout, sidebar, and route guard; admin seed user `admin@example.se`/`admin123`; BullMQ queue shared via `src/workers/queue.ts`
 - **Caching**: Redis with SHA-256 query key; skips cache for conversation follow-ups; graceful on Redis failure
@@ -240,8 +245,12 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 #### Refresh
 - `POST /admin/refresh/trigger` — manually trigger refresh check for stale documents
 
+#### Scraping
+- `POST /admin/scrape/trigger` — `{ target: "skatteverket"|"lagrummet"|"riksdagen", limit? }` → `{ jobId }`
+- `GET /admin/scrape/status` — per-target queue stats (waiting, active, completed, failed, lastCompleted)
+
 #### System Health
-- `GET /admin/health` — Qdrant stats, BullMQ queue counts, refresh scheduler stats, Redis ping, documents by status/source, total chunks
+- `GET /admin/health` — Qdrant stats, BullMQ queue counts, refresh/scrape scheduler stats, Redis ping, documents by status/source, total chunks
 
 ## Data Sources
 
@@ -259,6 +268,7 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 **Phase 4: COMPLETE** — React 18 + Vite 6 + Tailwind v4 frontend: chat UI with markdown + citation badges, conversation history (localStorage), source filters, dashboard with analytics, documents stub, evaluation stub with sample data, settings with theme toggle, JWT auth flow (login/register/protected routes), responsive sidebar layout
 **Phase 5: COMPLETE** — Admin dashboard: separate admin layout/sidebar/routes (`/admin/*`), documents CRUD (search/filter/detail drawer/delete/reprocess/mark superseded), sources CRUD (add/edit status/delete URLs), queries browser (feedback filter, expandable answers, feedback stats), system health monitoring (Qdrant/Redis/PG/BullMQ auto-refresh), user feedback (thumbs up/down in chat, stored per query), `requireAdmin` middleware, admin seed user, `sources` table, superseded/feedback fields on documents/queries
 **Phase 7: COMPLETE** — Metadata-enriched pipeline: `docType`/`audience`/`taxArea` enums + columns on documents table, auto-classification via `classifier.ts`, scrapers emit structured metadata, worker passes rich metadata to Qdrant, context assembler shows Swedish docType labels, system prompt with source hierarchy (lagtext > rättsfall > ställningstaganden > handledningar), new Qdrant filters (docType/audience/taxArea), query API supports new filter fields, content hash (SHA-256) for change detection, refresh scheduler (daily cron + manual trigger), admin refresh endpoint + UI
+**Phase 8: COMPLETE** — Production deploy + scheduled scraping: Dockerfile fixed (bun.lock, multi-stage, healthcheck), `.dockerignore`, `docker-compose.prod.yml` (backend/worker/refresh-worker/scrape-worker), graceful shutdown (SIGTERM/SIGINT), BullMQ scrape scheduler (`scrape-jobs` queue, weekly cron, admin trigger/status API), scrape scheduler UI (system health card, per-source scrape button), GitHub Actions CI (lint + Docker build)
 
 ## Known Issues
 

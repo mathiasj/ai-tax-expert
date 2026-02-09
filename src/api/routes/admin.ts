@@ -9,6 +9,7 @@ import { chunks, documents, queries, sources } from "../../db/schema.js";
 import { deletePoints, getCollectionInfo } from "../../processing/indexer.js";
 import { documentQueue } from "../../workers/queue.js";
 import { refreshQueue, triggerRefresh } from "../../workers/refresh-scheduler.js";
+import { scrapeQueue, triggerScrape } from "../../workers/scrape-scheduler.js";
 import { requireAdmin } from "../middleware/admin.js";
 
 const logger = pino({ name: "admin-api" });
@@ -22,11 +23,7 @@ admin.use("*", requireAdmin);
 admin.get("/documents/:id", async (c) => {
 	const docId = c.req.param("id");
 
-	const [doc] = await db
-		.select()
-		.from(documents)
-		.where(eq(documents.id, docId))
-		.limit(1);
+	const [doc] = await db.select().from(documents).where(eq(documents.id, docId)).limit(1);
 
 	if (!doc) return c.json({ error: "Document not found" }, 404);
 
@@ -84,9 +81,7 @@ admin.delete("/documents/:id", async (c) => {
 		.from(chunks)
 		.where(eq(chunks.documentId, docId));
 
-	const pointIds = chunkRows
-		.map((r) => r.qdrantPointId)
-		.filter((id): id is string => id !== null);
+	const pointIds = chunkRows.map((r) => r.qdrantPointId).filter((id): id is string => id !== null);
 
 	// Delete from Qdrant
 	try {
@@ -123,9 +118,7 @@ admin.post("/documents/:id/reprocess", async (c) => {
 		.from(chunks)
 		.where(eq(chunks.documentId, docId));
 
-	const pointIds = chunkRows
-		.map((r) => r.qdrantPointId)
-		.filter((id): id is string => id !== null);
+	const pointIds = chunkRows.map((r) => r.qdrantPointId).filter((id): id is string => id !== null);
 
 	try {
 		await deletePoints(pointIds);
@@ -253,10 +246,7 @@ admin.post("/sources", async (c) => {
 		return c.json({ error: "Source URL already exists" }, 409);
 	}
 
-	const [created] = await db
-		.insert(sources)
-		.values(parsed.data)
-		.returning();
+	const [created] = await db.insert(sources).values(parsed.data).returning();
 
 	return c.json(created, 201);
 });
@@ -375,11 +365,7 @@ admin.get("/queries/stats", async (c) => {
 admin.get("/queries/:id", async (c) => {
 	const id = c.req.param("id");
 
-	const [row] = await db
-		.select()
-		.from(queries)
-		.where(eq(queries.id, id))
-		.limit(1);
+	const [row] = await db.select().from(queries).where(eq(queries.id, id)).limit(1);
 
 	if (!row) return c.json({ error: "Query not found" }, 404);
 
@@ -393,6 +379,55 @@ admin.post("/refresh/trigger", async (c) => {
 	return c.json({ success: true, jobId });
 });
 
+// ─── Scraping ────────────────────────────────────────────────
+
+const triggerScrapeSchema = z.object({
+	target: z.enum(["skatteverket", "lagrummet", "riksdagen"]),
+	limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+admin.post("/scrape/trigger", async (c) => {
+	const body = await c.req.json();
+	const parsed = triggerScrapeSchema.safeParse(body);
+	if (!parsed.success) {
+		return c.json({ error: "Invalid request", details: parsed.error.format() }, 400);
+	}
+
+	const jobId = await triggerScrape(parsed.data.target, parsed.data.limit);
+	return c.json({ success: true, jobId });
+});
+
+admin.get("/scrape/status", async (c) => {
+	const targets = ["skatteverket", "lagrummet", "riksdagen"] as const;
+	const statuses = [];
+
+	for (const target of targets) {
+		const [waiting, active, completed, failed] = await Promise.all([
+			scrapeQueue.getWaitingCount(),
+			scrapeQueue.getActiveCount(),
+			scrapeQueue.getCompletedCount(),
+			scrapeQueue.getFailedCount(),
+		]);
+
+		// Get last completed job for this target
+		const completedJobs = await scrapeQueue.getCompleted(0, 20);
+		const lastForTarget = completedJobs.find((j) => j.data.target === target);
+
+		statuses.push({
+			target,
+			waiting,
+			active,
+			completed,
+			failed,
+			lastCompleted: lastForTarget?.finishedOn
+				? new Date(lastForTarget.finishedOn).toISOString()
+				: undefined,
+		});
+	}
+
+	return c.json({ statuses });
+});
+
 // ─── System Health ───────────────────────────────────────────
 
 admin.get("/health", async (c) => {
@@ -401,7 +436,13 @@ admin.get("/health", async (c) => {
 	// Qdrant
 	try {
 		const qdrantInfo = await getCollectionInfo();
-		result.qdrant = { status: "ok", collectionStatus: qdrantInfo.status, pointsCount: qdrantInfo.pointsCount, vectorsCount: qdrantInfo.vectorsCount, segmentsCount: qdrantInfo.segmentsCount };
+		result.qdrant = {
+			status: "ok",
+			collectionStatus: qdrantInfo.status,
+			pointsCount: qdrantInfo.pointsCount,
+			vectorsCount: qdrantInfo.vectorsCount,
+			segmentsCount: qdrantInfo.segmentsCount,
+		};
 	} catch (err) {
 		result.qdrant = { status: "error", error: String(err) };
 	}
@@ -449,9 +490,40 @@ admin.get("/health", async (c) => {
 		]);
 		const schedulers = await refreshQueue.getJobSchedulers();
 		const nextRun = schedulers[0]?.next ? new Date(schedulers[0].next).toISOString() : undefined;
-		result.refreshScheduler = { status: "ok", waiting: rWaiting, active: rActive, completed: rCompleted, failed: rFailed, nextRun };
+		result.refreshScheduler = {
+			status: "ok",
+			waiting: rWaiting,
+			active: rActive,
+			completed: rCompleted,
+			failed: rFailed,
+			nextRun,
+		};
 	} catch (err) {
 		result.refreshScheduler = { status: "error", error: String(err) };
+	}
+
+	// Scrape scheduler
+	try {
+		const [sWaiting, sActive, sCompleted, sFailed] = await Promise.all([
+			scrapeQueue.getWaitingCount(),
+			scrapeQueue.getActiveCount(),
+			scrapeQueue.getCompletedCount(),
+			scrapeQueue.getFailedCount(),
+		]);
+		const scrapeSchedulers = await scrapeQueue.getJobSchedulers();
+		const nextScrapeRun = scrapeSchedulers[0]?.next
+			? new Date(scrapeSchedulers[0].next).toISOString()
+			: undefined;
+		result.scrapeScheduler = {
+			status: "ok",
+			waiting: sWaiting,
+			active: sActive,
+			completed: sCompleted,
+			failed: sFailed,
+			nextRun: nextScrapeRun,
+		};
+	} catch (err) {
+		result.scrapeScheduler = { status: "error", error: String(err) };
 	}
 
 	// Documents by status

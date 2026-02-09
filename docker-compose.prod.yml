@@ -1,0 +1,127 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "${QDRANT_DB_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB_NAME:-tax_expert}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_CACHE_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build: .
+    ports:
+      - "${BACKEND_API_PORT:-3050}:${BACKEND_API_PORT:-3050}"
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_CACHE_PORT: 6379
+      QDRANT_HOST: qdrant
+      QDRANT_DB_PORT: 6333
+      NODE_ENV: production
+    command: sh -c "bun run db:migrate && bun run src/index.ts"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_CACHE_PORT: 6379
+      QDRANT_HOST: qdrant
+      QDRANT_DB_PORT: 6333
+      NODE_ENV: production
+    command: bun run src/workers/document-processor.ts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+  refresh-worker:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_CACHE_PORT: 6379
+      QDRANT_HOST: qdrant
+      QDRANT_DB_PORT: 6333
+      NODE_ENV: production
+    command: bun run src/workers/refresh-scheduler.ts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scrape-worker:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_CACHE_PORT: 6379
+      QDRANT_HOST: qdrant
+      QDRANT_DB_PORT: 6333
+      NODE_ENV: production
+    command: bun run src/workers/scrape-scheduler.ts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  postgres_data:
+  redis_data:

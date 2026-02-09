@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { useSystemHealth } from "@/hooks/use-admin";
+import { useSystemHealth, useTriggerScrape } from "@/hooks/use-admin";
 import { api } from "@/lib/api-client";
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -43,6 +43,24 @@ function ServiceCard({
 export function AdminSystemPage() {
 	const { data, isLoading, refetch } = useSystemHealth();
 	const [refreshing, setRefreshing] = useState(false);
+	const [scraping, setScraping] = useState(false);
+	const { trigger: triggerScrape } = useTriggerScrape();
+
+	const handleTriggerScrapeAll = async () => {
+		setScraping(true);
+		try {
+			await Promise.all([
+				triggerScrape("riksdagen"),
+				triggerScrape("lagrummet"),
+				triggerScrape("skatteverket"),
+			]);
+			setTimeout(refetch, 1000);
+		} catch {
+			// ignore
+		} finally {
+			setScraping(false);
+		}
+	};
 
 	const handleTriggerRefresh = async () => {
 		setRefreshing(true);
@@ -140,6 +158,28 @@ export function AdminSystemPage() {
 						</>
 					) : (
 						<p className="text-red-500">{data?.refreshScheduler?.error ?? "Ej konfigurerad"}</p>
+					)}
+				</ServiceCard>
+
+				{/* Scrape Scheduler */}
+				<ServiceCard title="Scrape Scheduler" status={data?.scrapeScheduler?.status ?? "error"}>
+					{data?.scrapeScheduler?.status === "ok" ? (
+						<>
+							<div className="grid grid-cols-2 gap-1">
+								<p>Väntande: <span className="font-medium text-gray-900 dark:text-gray-100">{data.scrapeScheduler.waiting}</span></p>
+								<p>Aktiva: <span className="font-medium text-gray-900 dark:text-gray-100">{data.scrapeScheduler.active}</span></p>
+								<p>Klara: <span className="font-medium text-gray-900 dark:text-gray-100">{data.scrapeScheduler.completed?.toLocaleString()}</span></p>
+								<p>Misslyckade: <span className="font-medium text-red-600 dark:text-red-400">{data.scrapeScheduler.failed}</span></p>
+							</div>
+							{data.scrapeScheduler.nextRun && (
+								<p className="mt-1">Nästa körning: <span className="font-medium text-gray-900 dark:text-gray-100">{new Date(data.scrapeScheduler.nextRun).toLocaleString("sv-SE")}</span></p>
+							)}
+							<Button variant="secondary" size="sm" className="mt-2" onClick={handleTriggerScrapeAll} disabled={scraping}>
+								{scraping ? "Skrapar..." : "Kör alla"}
+							</Button>
+						</>
+					) : (
+						<p className="text-red-500">{data?.scrapeScheduler?.error ?? "Ej konfigurerad"}</p>
 					)}
 				</ServiceCard>
 			</div>

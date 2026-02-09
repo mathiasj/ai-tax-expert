@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { useCreateSource, useDeleteSource, useSources } from "@/hooks/use-admin";
+import { useCreateSource, useDeleteSource, useSources, useTriggerScrape } from "@/hooks/use-admin";
 import { api } from "@/lib/api-client";
 import { formatDate } from "@/lib/utils";
 
@@ -48,6 +48,7 @@ export function AdminSourcesPage() {
 
 	const { create, isLoading: creating } = useCreateSource();
 	const { deleteSource, isLoading: deleting } = useDeleteSource();
+	const { trigger: triggerScrape, isLoading: scraping } = useTriggerScrape();
 
 	const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
@@ -71,6 +72,13 @@ export function AdminSourcesPage() {
 		if (ok) {
 			setDeleteId(null);
 			refetch();
+		}
+	};
+
+	const handleScrape = async (source: string) => {
+		const ok = await triggerScrape(source);
+		if (ok) {
+			setTimeout(refetch, 2000);
 		}
 	};
 
@@ -132,6 +140,16 @@ export function AdminSourcesPage() {
 												onChange={(e) => handleStatusChange(src.id, e.target.value)}
 												className="w-24 !py-1 text-xs"
 											/>
+											{src.source !== "manual" && (
+												<Button
+													variant="secondary"
+													size="sm"
+													onClick={() => handleScrape(src.source)}
+													disabled={scraping}
+												>
+													Skrapa
+												</Button>
+											)}
 											<Button
 												variant="ghost"
 												size="sm"

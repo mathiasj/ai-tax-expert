@@ -14,6 +14,7 @@
     "process": "bun run scripts/process-documents.ts",
     "worker": "bun run src/workers/document-processor.ts",
     "refresh-worker": "bun run src/workers/refresh-scheduler.ts",
+    "scrape-worker": "bun run src/workers/scrape-scheduler.ts",
     "lint": "biome check src/",
     "lint:fix": "biome check --write src/",
     "format": "biome format --write src/",

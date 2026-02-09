@@ -1,21 +1,23 @@
 FROM oven/bun:1 AS base
 WORKDIR /app
 
+# Install dependencies
 FROM base AS install
-COPY package.json bun.lockb ./
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-FROM base AS build
-COPY package.json bun.lockb ./
-RUN bun install --frozen-lockfile
-COPY . .
-RUN bun run build
-
+# Release — Bun runs TypeScript directly, no build step needed
 FROM base AS release
 COPY --from=install /app/node_modules node_modules
-COPY --from=build /app/dist dist
-COPY --from=build /app/package.json .
+COPY package.json bun.lock drizzle.config.ts ./
+COPY src/ src/
+COPY scripts/ scripts/
+COPY drizzle/ drizzle/
 
 USER bun
 EXPOSE 3000/tcp
-ENTRYPOINT ["bun", "run", "dist/index.js"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+	CMD curl -f http://localhost:3000/health || exit 1
+
+ENTRYPOINT ["bun", "run", "src/index.ts"]

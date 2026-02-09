@@ -242,12 +242,26 @@ export interface FeedbackStats {
 	noFeedback: number;
 }
 
+export interface ScrapeStatus {
+	target: string;
+	waiting: number;
+	active: number;
+	completed: number;
+	failed: number;
+	lastCompleted?: string;
+}
+
+export interface ScrapeStatusResponse {
+	statuses: ScrapeStatus[];
+}
+
 export interface SystemHealth {
 	qdrant: { status: string; pointsCount?: number; vectorsCount?: number; segmentsCount?: number; error?: string };
 	redis: { status: string; latencyMs?: number; error?: string };
 	postgres: { status: string; error?: string };
 	bullmq: { status: string; waiting?: number; active?: number; completed?: number; failed?: number; error?: string };
 	refreshScheduler?: { status: string; waiting?: number; active?: number; completed?: number; failed?: number; nextRun?: string; error?: string };
+	scrapeScheduler?: { status: string; waiting?: number; active?: number; completed?: number; failed?: number; nextRun?: string; error?: string };
 	documents: {
 		byStatus: Record<string, number>;
 		bySource: Record<string, number>;

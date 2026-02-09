@@ -54,19 +54,22 @@ const envSchema = z
 
 		// Scraping
 		FIRECRAWL_API_KEY: z.string().optional(),
+		SCRAPE_SCHEDULE_CRON: z.string().default("0 4 * * 1"),
+		SCRAPE_DEFAULT_LIMIT: z.coerce.number().default(50),
+		SCRAPE_SCHEDULE_ENABLED: z
+			.enum(["true", "false"])
+			.default("true")
+			.transform((v) => v === "true"),
 
 		// RAG config
 		RERANKER_TOP_N: z.coerce.number().default(5),
 		RAG_TOP_K: z.coerce.number().default(20),
 		RAG_TOKEN_BUDGET: z.coerce.number().default(6000),
 	})
-	.refine(
-		(data) => data.LLM_PROVIDER !== "anthropic" || !!data.ANTHROPIC_API_KEY,
-		{
-			message: "ANTHROPIC_API_KEY is required when LLM_PROVIDER is 'anthropic'",
-			path: ["ANTHROPIC_API_KEY"],
-		},
-	);
+	.refine((data) => data.LLM_PROVIDER !== "anthropic" || !!data.ANTHROPIC_API_KEY, {
+		message: "ANTHROPIC_API_KEY is required when LLM_PROVIDER is 'anthropic'",
+		path: ["ANTHROPIC_API_KEY"],
+	});
 
 type ParsedEnv = z.output<typeof envSchema>;
 
@@ -90,11 +93,9 @@ function loadEnv(): Env {
 		parsed.DATABASE_URL ??
 		`postgresql://${parsed.POSTGRES_USER}:${parsed.POSTGRES_PASSWORD}@${parsed.POSTGRES_HOST}:${parsed.POSTGRES_DB_PORT}/${parsed.POSTGRES_DB_NAME}`;
 
-	const REDIS_URL =
-		parsed.REDIS_URL ?? `redis://${parsed.REDIS_HOST}:${parsed.REDIS_CACHE_PORT}`;
+	const REDIS_URL = parsed.REDIS_URL ?? `redis://${parsed.REDIS_HOST}:${parsed.REDIS_CACHE_PORT}`;
 
-	const QDRANT_URL =
-		parsed.QDRANT_URL ?? `http://${parsed.QDRANT_HOST}:${parsed.QDRANT_DB_PORT}`;
+	const QDRANT_URL = parsed.QDRANT_URL ?? `http://${parsed.QDRANT_HOST}:${parsed.QDRANT_DB_PORT}`;
 
 	return {
 		...parsed,

@@ -8,6 +8,7 @@ import type {
 	AdminSourcesResponse,
 	DocumentsResponse,
 	FeedbackStats,
+	ScrapeStatusResponse,
 	SystemHealth,
 } from "@/types/api";
 
@@ -273,6 +274,48 @@ export function useFeedbackStats() {
 	}, []);
 
 	return { data, isLoading };
+}
+
+// ─── Scraping ────────────────────────────────────────────────
+
+export function useScrapeStatus() {
+	const [data, setData] = useState<ScrapeStatusResponse | null>(null);
+	const [isLoading, setIsLoading] = useState(true);
+
+	const fetch = useCallback(async () => {
+		try {
+			const result = await api.get<ScrapeStatusResponse>("/api/admin/scrape/status");
+			setData(result);
+		} catch {
+			// keep previous data on error
+		} finally {
+			setIsLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		fetch();
+	}, [fetch]);
+
+	return { data, isLoading, refetch: fetch };
+}
+
+export function useTriggerScrape() {
+	const [isLoading, setIsLoading] = useState(false);
+
+	const trigger = async (target: string, limit?: number) => {
+		setIsLoading(true);
+		try {
+			await api.post("/api/admin/scrape/trigger", { target, limit });
+			return true;
+		} catch {
+			return false;
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	return { trigger, isLoading };
 }
 
 // ─── System Health ───────────────────────────────────────────
