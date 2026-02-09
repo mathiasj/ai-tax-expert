@@ -7,6 +7,29 @@ export const documentSourceEnum = pgEnum("document_source", [
 	"manual",
 ]);
 
+export const docTypeEnum = pgEnum("doc_type", [
+	"stallningstagande",
+	"handledning",
+	"proposition",
+	"sou",
+	"rattsfallsnotis",
+	"rattsfallsreferat",
+	"ovrigt",
+]);
+
+export const audienceEnum = pgEnum("audience", [
+	"allman",
+	"foretag",
+	"specialist",
+]);
+
+export const refreshPolicyEnum = pgEnum("refresh_policy", [
+	"once",
+	"weekly",
+	"monthly",
+	"quarterly",
+]);
+
 export const sourceStatusEnum = pgEnum("source_status", [
 	"active",
 	"paused",
@@ -32,6 +55,12 @@ export const documents = pgTable("documents", {
 	status: documentStatusEnum("status").notNull().default("pending"),
 	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
 	errorMessage: text("error_message"),
+	docType: docTypeEnum("doc_type"),
+	audience: audienceEnum("audience"),
+	taxArea: varchar("tax_area", { length: 100 }),
+	refreshPolicy: refreshPolicyEnum("refresh_policy").notNull().default("once"),
+	contentHash: varchar("content_hash", { length: 64 }),
+	lastCheckedAt: timestamp("last_checked_at"),
 	supersededById: uuid("superseded_by_id"),
 	supersededAt: timestamp("superseded_at"),
 	supersededNote: text("superseded_note"),

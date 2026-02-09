@@ -115,12 +115,18 @@ export class LagrummetClient extends BaseScraper {
 			filePath = await this.saveFile(filename, content);
 		}
 
+		const docType = entry.type.toLowerCase().includes("referat")
+			? "rattsfallsreferat"
+			: "rattsfallsnotis";
+
 		await this.saveMetadata(filePath, {
 			title: entry.title,
 			sourceUrl: entry.url,
 			source: "lagrummet",
 			caseId: entry.id,
 			published: entry.published,
+			docType,
+			audience: "specialist",
 		});
 
 		return {
@@ -133,6 +139,8 @@ export class LagrummetClient extends BaseScraper {
 				caseId: entry.id,
 				published: entry.published,
 				type: entry.type,
+				docType,
+				audience: "specialist",
 			},
 		};
 	}

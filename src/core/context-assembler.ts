@@ -48,12 +48,23 @@ function orderChunks(chunks: RankedChunk[]): RankedChunk[] {
 	return ordered;
 }
 
+const DOC_TYPE_LABELS: Record<string, string> = {
+	stallningstagande: "Ställningstagande",
+	handledning: "Handledning",
+	proposition: "Proposition",
+	sou: "SOU",
+	rattsfallsnotis: "Rättsfallsnotis",
+	rattsfallsreferat: "Rättsfallsreferat",
+	ovrigt: "Övrigt",
+};
+
 function formatContext(chunks: RankedChunk[]): string {
 	return chunks
 		.map((chunk, i) => {
-			const source = (chunk.metadata.source as string) ?? "okänd";
+			const docType = chunk.metadata.docType as string | undefined;
+			const label = docType ? (DOC_TYPE_LABELS[docType] ?? docType) : ((chunk.metadata.source as string) ?? "okänd");
 			const title = (chunk.metadata.title as string) ?? "Utan titel";
-			return `[Källa ${i + 1}: ${source} - ${title}]\n${chunk.content}`;
+			return `[Källa ${i + 1}: ${label} - ${title}]\n${chunk.content}`;
 		})
 		.join("\n\n---\n\n");
 }

@@ -4,6 +4,7 @@ import { parsePdf, parseTextFile } from "../src/processing/pdf-parser.js";
 import { chunkDocument } from "../src/processing/chunker.js";
 import { embedTexts } from "../src/processing/embedder.js";
 import { indexPoints, type IndexPoint } from "../src/processing/indexer.js";
+import { classifyDocType, classifyAudience, detectTaxArea } from "../src/processing/classifier.js";
 import { v4 as uuidv4 } from "uuid";
 
 const RAW_DIR = "data/raw";
@@ -86,12 +87,24 @@ async function main() {
 
 			console.log(`  Parsed: ${parsed.text.length} chars, ${parsed.pageCount} pages`);
 
-			// 2. Chunk — include title, source, sourceUrl in metadata
-			const chunks = await chunkDocument(parsed.text, {
+			// 1b. Auto-classify if not already set in metadata
+			const docType = (meta.docType as string) ?? classifyDocType(meta.source, meta);
+			const audience = (meta.audience as string) ?? classifyAudience(meta.source, meta);
+			const taxArea = (meta.taxArea as string) ?? detectTaxArea(meta.title, parsed.text.slice(0, 2000));
+
+			console.log(`  Classification: docType=${docType}, audience=${audience}, taxArea=${taxArea ?? "none"}`);
+
+			// 2. Chunk — include all metadata
+			const enrichedMeta: Record<string, unknown> = {
 				...parsed.metadata,
 				...meta,
 				filePath,
-			});
+				docType,
+				audience,
+			};
+			if (taxArea) enrichedMeta.taxArea = taxArea;
+
+			const chunks = await chunkDocument(parsed.text, enrichedMeta);
 			console.log(`  Chunked: ${chunks.length} chunks`);
 
 			// 3. Embed

@@ -8,6 +8,7 @@ import { db } from "../../db/client.js";
 import { chunks, documents, queries, sources } from "../../db/schema.js";
 import { deletePoints, getCollectionInfo } from "../../processing/indexer.js";
 import { documentQueue } from "../../workers/queue.js";
+import { refreshQueue, triggerRefresh } from "../../workers/refresh-scheduler.js";
 import { requireAdmin } from "../middleware/admin.js";
 
 const logger = pino({ name: "admin-api" });
@@ -153,6 +154,7 @@ admin.post("/documents/:id/reprocess", async (c) => {
 const patchDocSchema = z.object({
 	supersededById: z.string().uuid().nullable().optional(),
 	supersededNote: z.string().max(500).nullable().optional(),
+	refreshPolicy: z.enum(["once", "weekly", "monthly", "quarterly"]).optional(),
 });
 
 admin.patch("/documents/:id", async (c) => {
@@ -171,6 +173,9 @@ admin.patch("/documents/:id", async (c) => {
 	}
 	if (parsed.data.supersededNote !== undefined) {
 		updates.supersededNote = parsed.data.supersededNote;
+	}
+	if (parsed.data.refreshPolicy !== undefined) {
+		updates.refreshPolicy = parsed.data.refreshPolicy;
 	}
 
 	await db.update(documents).set(updates).where(eq(documents.id, docId));
@@ -381,6 +386,13 @@ admin.get("/queries/:id", async (c) => {
 	return c.json(row);
 });
 
+// ─── Refresh ─────────────────────────────────────────────────
+
+admin.post("/refresh/trigger", async (c) => {
+	const jobId = await triggerRefresh();
+	return c.json({ success: true, jobId });
+});
+
 // ─── System Health ───────────────────────────────────────────
 
 admin.get("/health", async (c) => {
@@ -425,6 +437,21 @@ admin.get("/health", async (c) => {
 		result.bullmq = { status: "ok", waiting, active, completed, failed };
 	} catch (err) {
 		result.bullmq = { status: "error", error: String(err) };
+	}
+
+	// Refresh scheduler
+	try {
+		const [rWaiting, rActive, rCompleted, rFailed] = await Promise.all([
+			refreshQueue.getWaitingCount(),
+			refreshQueue.getActiveCount(),
+			refreshQueue.getCompletedCount(),
+			refreshQueue.getFailedCount(),
+		]);
+		const schedulers = await refreshQueue.getJobSchedulers();
+		const nextRun = schedulers[0]?.next ? new Date(schedulers[0].next).toISOString() : undefined;
+		result.refreshScheduler = { status: "ok", waiting: rWaiting, active: rActive, completed: rCompleted, failed: rFailed, nextRun };
+	} catch (err) {
+		result.refreshScheduler = { status: "error", error: String(err) };
 	}
 
 	// Documents by status

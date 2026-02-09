@@ -24,6 +24,7 @@ export interface SourceCitation {
 	title: string;
 	sourceUrl: string | null;
 	section: string | null;
+	docType: string | null;
 	relevanceScore: number;
 }
 
@@ -50,6 +51,9 @@ export interface RAGResponse {
 export interface MetadataFilter {
 	source?: string[];
 	documentId?: string[];
+	docType?: string[];
+	audience?: string[];
+	taxArea?: string[];
 }
 
 export interface ConversationTurn {

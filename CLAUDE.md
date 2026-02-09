@@ -26,7 +26,7 @@ An AI-powered Swedish tax advisory system using RAG (Retrieval-Augmented Generat
 ```
 src/
 ├── config/env.ts          # Zod-validated environment config (LLM + RAG settings)
-├── db/schema.ts           # Drizzle tables: documents, chunks, queries, users, conversations, sources
+├── db/schema.ts           # Drizzle tables + enums: documents, chunks, queries, users, conversations, sources; docType, audience, refreshPolicy enums
 ├── db/client.ts           # Drizzle PostgreSQL client
 ├── db/seed.ts             # Dev seed: test@example.se + admin@example.se
 ├── scraping/
@@ -36,12 +36,14 @@ src/
 │   └── riksdagen-client.ts
 ├── processing/
 │   ├── pdf-parser.ts      # PDF → clean text
+│   ├── classifier.ts      # Auto-classify docType, audience, taxArea from source metadata + content
 │   ├── chunker.ts         # Text → chunks (Swedish legal separators)
 │   ├── embedder.ts        # Chunks → OpenAI embeddings
-│   └── indexer.ts         # Embeddings → Qdrant (includes filtered search, delete, collection info)
+│   └── indexer.ts         # Embeddings → Qdrant (filtered search by source, docType, audience, taxArea)
 ├── workers/
 │   ├── queue.ts               # Shared BullMQ queue instance (used by worker + admin routes)
-│   └── document-processor.ts  # BullMQ worker: parse → chunk → embed → index
+│   ├── document-processor.ts  # BullMQ worker: parse → classify → chunk → embed → index (+ refresh support)
+│   └── refresh-scheduler.ts   # Refresh scheduler: daily cron + manual trigger, content hash comparison
 ├── core/
 │   ├── types.ts           # Shared RAG types (RetrievedChunk, RAGResponse, etc.)
 │   ├── llm/
@@ -51,8 +53,8 @@ src/
 │   │   └── llm-factory.ts       # Factory + cached singleton
 │   ├── retriever.ts       # Query embed → Qdrant filtered search → RetrievedChunk[]
 │   ├── reranker.ts        # Cohere rerank-multilingual-v3.0
-│   ├── context-assembler.ts # Dedup, doc-grouped ordering, token budget
-│   ├── prompts.ts         # Swedish tax system/user/eval prompts + conversation builder
+│   ├── context-assembler.ts # Dedup, doc-grouped ordering, token budget, docType → Swedish labels
+│   ├── prompts.ts         # Swedish tax system prompt (with source hierarchy), user/eval prompts
 │   ├── rag-pipeline.ts    # Orchestrator: retrieve → rerank → assemble → generate (with fallbacks)
 │   ├── cache.ts           # Redis cache: get/set/delete, SHA-256 query cache key
 │   ├── conversation.ts    # Create conversation, fetch history (last 5 turns)
@@ -73,7 +75,7 @@ src/
 │   ├── routes/query.ts    # POST /api/query — full RAG pipeline, POST /api/queries/:id/feedback
 │   ├── routes/analytics.ts # GET /analytics/summary, /analytics/popular
 │   ├── routes/documents.ts # GET /api/documents — list with search/filter/chunkCount
-│   ├── routes/admin.ts    # /api/admin/* — documents CRUD, sources CRUD, queries/feedback, system health
+│   ├── routes/admin.ts    # /api/admin/* — documents CRUD, sources CRUD, queries/feedback, system health, refresh trigger
 │   ├── middleware/auth.ts  # optionalAuth + requireAuth JWT middleware
 │   ├── middleware/admin.ts # requireAdmin (requireAuth + role === "admin")
 │   ├── middleware/rate-limiter.ts  # Redis sliding window per IP/user
@@ -127,7 +129,7 @@ frontend/
 │   │       ├── admin-documents-page.tsx  # /admin/documents — search, filter, detail drawer, CRUD
 │   │       ├── admin-sources-page.tsx    # /admin/sources — add/edit/delete source URLs
 │   │       ├── admin-queries-page.tsx    # /admin/queries — browse with feedback filter
-│   │       └── admin-system-page.tsx     # /admin/system — Qdrant/Redis/PG/BullMQ health
+│   │       └── admin-system-page.tsx     # /admin/system — Qdrant/Redis/PG/BullMQ/Refresh health
 │   └── data/
 │       └── sample-eval-results.ts  # Static eval data for stub page
 └── public/favicon.svg
@@ -144,6 +146,7 @@ bun run dev:all        # Start both backend and frontend
 bun run scrape         # Run scrapers (--target skatteverket|lagrummet|riksdagen|all --limit N --dry-run)
 bun run process        # Process raw documents → chunks → embeddings → Qdrant
 bun run worker         # Start BullMQ document processing worker
+bun run refresh-worker # Start refresh scheduler (checks for stale documents daily at 03:00)
 bun run eval           # Run RAG evaluation suite (17 test questions)
 bun run db:generate    # Generate Drizzle migrations
 bun run db:migrate     # Run Drizzle migrations
@@ -161,10 +164,13 @@ docker compose up -d   # Start Qdrant, PostgreSQL, Redis
 - **Riksdagen scraper**: Deduplicates against existing files on disk, Cheerio-based HTML stripping
 - **Chunking**: Swedish legal separators: `§`, `Kap.`, `Kapitel`, `Avdelning`, `Avsnitt`
 - **Embedding**: Batched (100/batch), OpenAI text-embedding-3-large at 1536 dimensions
-- **Indexing**: Qdrant upsert in batches of 100, cosine distance, metadata filter support (source, documentId)
-- **RAG pipeline**: retrieve (top-K=20) → rerank (Cohere, top-N=5) → assemble (dedup, token budget=6000) → generate (LLM with Swedish tax system prompt) → cite sources as [Källa N]
+- **Metadata classification**: Auto-classify `docType` (ställningstagande, handledning, proposition, etc.), `audience` (allmän, företag, specialist), `taxArea` (inkomstskatt, moms, etc.) via `src/processing/classifier.ts`
+- **Indexing**: Qdrant upsert in batches of 100, cosine distance, metadata filter support (source, documentId, docType, audience, taxArea)
+- **RAG pipeline**: retrieve (top-K=20) → rerank (Cohere, top-N=5) → assemble (dedup, token budget=6000) → generate (LLM with Swedish tax system prompt + source hierarchy) → cite sources as [Källa N: Dokumenttyp - Titel]
+- **Source hierarchy**: System prompt instructs LLM to prioritize: lagtext > rättsfall > ställningstaganden > handledningar
 - **LLM providers**: Factory pattern with cached singleton; switch via `LLM_PROVIDER=openai|anthropic`
-- **Worker pipeline**: download → parse → chunk → embed → index (BullMQ, concurrency 2)
+- **Worker pipeline**: download → parse → classify → chunk → embed → index (BullMQ, concurrency 2); computes SHA-256 contentHash for change detection
+- **Refresh scheduler**: BullMQ repeatable job (daily 03:00) checks documents with `refreshPolicy != "once"` and stale `lastCheckedAt`; re-queues for processing; skips unchanged content via hash comparison
 - **Auth**: JWT (Hono HS256) + Bun.password (argon2id); `optionalAuth` on all `/api/*`, `requireAuth` on analytics, `requireAdmin` on `/api/admin/*`
 - **Admin**: Separate admin section (`/admin/*`) with own layout, sidebar, and route guard; admin seed user `admin@example.se`/`admin123`; BullMQ queue shared via `src/workers/queue.ts`
 - **Caching**: Redis with SHA-256 query key; skips cache for conversation follow-ups; graceful on Redis failure
@@ -195,7 +201,7 @@ docker compose up -d   # Start Qdrant, PostgreSQL, Redis
   "tokenBudget": 6000,
   "temperature": 0.1,
   "conversationId": "uuid (optional, for follow-ups)",
-  "filters": { "source": ["riksdagen"], "documentId": [] }
+  "filters": { "source": ["riksdagen"], "documentId": [], "docType": ["proposition"], "audience": ["specialist"], "taxArea": ["kapitalvinst"] }
 }
 ```
 Returns: `{ answer, citations, conversationId, queryId, cached, timings, metadata }`
@@ -218,7 +224,7 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 - `GET /admin/documents/:id/chunks` — paginated chunk list with content
 - `DELETE /admin/documents/:id` — remove document + chunks (PG cascade) + Qdrant points
 - `POST /admin/documents/:id/reprocess` — reset to pending, queue in BullMQ
-- `PATCH /admin/documents/:id` — update supersededById/supersededNote
+- `PATCH /admin/documents/:id` — update supersededById/supersededNote/refreshPolicy
 
 #### Sources
 - `GET /admin/sources` — list with filter (source, status) + documentCount
@@ -231,8 +237,11 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 - `GET /admin/queries/:id` — full answer + metadata + sources + feedback
 - `GET /admin/queries/stats` — feedback statistics: positive/negative/none counts
 
+#### Refresh
+- `POST /admin/refresh/trigger` — manually trigger refresh check for stale documents
+
 #### System Health
-- `GET /admin/health` — Qdrant stats, BullMQ queue counts, Redis ping, documents by status/source, total chunks
+- `GET /admin/health` — Qdrant stats, BullMQ queue counts, refresh scheduler stats, Redis ping, documents by status/source, total chunks
 
 ## Data Sources
 
@@ -249,6 +258,7 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 **Phase 3: COMPLETE** — JWT auth (Hono JWT + argon2id), conversation history (last 5 turns), Redis cache (SHA-256 key), sliding-window rate limiter, Swedish fallbacks, analytics endpoints
 **Phase 4: COMPLETE** — React 18 + Vite 6 + Tailwind v4 frontend: chat UI with markdown + citation badges, conversation history (localStorage), source filters, dashboard with analytics, documents stub, evaluation stub with sample data, settings with theme toggle, JWT auth flow (login/register/protected routes), responsive sidebar layout
 **Phase 5: COMPLETE** — Admin dashboard: separate admin layout/sidebar/routes (`/admin/*`), documents CRUD (search/filter/detail drawer/delete/reprocess/mark superseded), sources CRUD (add/edit status/delete URLs), queries browser (feedback filter, expandable answers, feedback stats), system health monitoring (Qdrant/Redis/PG/BullMQ auto-refresh), user feedback (thumbs up/down in chat, stored per query), `requireAdmin` middleware, admin seed user, `sources` table, superseded/feedback fields on documents/queries
+**Phase 7: COMPLETE** — Metadata-enriched pipeline: `docType`/`audience`/`taxArea` enums + columns on documents table, auto-classification via `classifier.ts`, scrapers emit structured metadata, worker passes rich metadata to Qdrant, context assembler shows Swedish docType labels, system prompt with source hierarchy (lagtext > rättsfall > ställningstaganden > handledningar), new Qdrant filters (docType/audience/taxArea), query API supports new filter fields, content hash (SHA-256) for change detection, refresh scheduler (daily cron + manual trigger), admin refresh endpoint + UI
 
 ## Known Issues
 

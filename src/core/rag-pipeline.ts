@@ -114,6 +114,7 @@ export async function executeRAGQuery(
 				title: (chunk.metadata.title as string) ?? "Utan titel",
 				sourceUrl: (chunk.metadata.sourceUrl as string) ?? null,
 				section: (chunk.metadata.section as string) ?? null,
+				docType: (chunk.metadata.docType as string) ?? null,
 				relevanceScore: chunk.rerankScore,
 			});
 		}

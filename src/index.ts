@@ -18,6 +18,7 @@ import { evaluation } from "./api/routes/evaluation.js";
 import { health } from "./api/routes/health.js";
 import { query } from "./api/routes/query.js";
 import { seedTestUser } from "./db/seed.js";
+import { setupRefreshSchedule } from "./workers/refresh-scheduler.js";
 
 const log = pino({ name: "server" });
 
@@ -69,6 +70,9 @@ const port = env.BACKEND_API_PORT;
 if (process.env.NODE_ENV !== "production") {
 	seedTestUser().catch((err) => log.warn({ err }, "Could not seed test user"));
 }
+
+// Set up refresh scheduler
+setupRefreshSchedule().catch((err) => log.warn({ err }, "Could not set up refresh schedule"));
 
 log.info({ port }, "Starting server");
 

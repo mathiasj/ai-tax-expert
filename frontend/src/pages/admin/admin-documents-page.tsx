@@ -250,6 +250,34 @@ export function AdminDocumentsPage() {
 								<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Skapad</p>
 								<p className="text-sm">{formatDate(detail.createdAt)}</p>
 							</div>
+							{detail.docType && (
+								<div>
+									<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Dokumenttyp</p>
+									<p className="text-sm">{detail.docType}</p>
+								</div>
+							)}
+							{detail.audience && (
+								<div>
+									<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Målgrupp</p>
+									<p className="text-sm">{detail.audience}</p>
+								</div>
+							)}
+							{detail.taxArea && (
+								<div>
+									<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Skatteområde</p>
+									<p className="text-sm">{detail.taxArea}</p>
+								</div>
+							)}
+							<div>
+								<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Uppdateringspolicy</p>
+								<p className="text-sm">{detail.refreshPolicy}</p>
+							</div>
+							{detail.lastCheckedAt && (
+								<div>
+									<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Senast kontrollerad</p>
+									<p className="text-sm">{formatDate(detail.lastCheckedAt)}</p>
+								</div>
+							)}
 						</div>
 						{detail.errorMessage && (
 							<div>

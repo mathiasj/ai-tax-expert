@@ -102,12 +102,17 @@ export class RiksdagenClient extends BaseScraper {
 				const content = stripHtml(htmlContent);
 				const filePath = await this.saveFile(filename, content);
 				const sourceUrl = `https://www.riksdagen.se/sv/dokument-och-lagar/${item.dok_id}/`;
+				const docType = item.doktyp.toLowerCase() === "prop" ? "proposition"
+					: item.doktyp.toLowerCase() === "sou" ? "sou"
+					: "ovrigt";
 				await this.saveMetadata(filePath, {
 					title: item.titel,
 					sourceUrl,
 					source: "riksdagen",
 					docId: item.dok_id,
-					docType: item.doktyp,
+					doktyp: item.doktyp,
+					docType,
+					audience: "specialist",
 					date: item.datum,
 					subtitle: item.undertitel,
 				});
@@ -120,7 +125,9 @@ export class RiksdagenClient extends BaseScraper {
 					metadata: {
 						source: "riksdagen",
 						docId: item.dok_id,
-						docType: item.doktyp,
+						doktyp: item.doktyp,
+						docType,
+						audience: "specialist",
 						date: item.datum,
 						subtitle: item.undertitel,
 					},
@@ -137,12 +144,17 @@ export class RiksdagenClient extends BaseScraper {
 			const buffer = Buffer.from(await response.arrayBuffer());
 			const filename = `${item.doktyp}_${item.dok_id}.pdf`;
 			const filePath = await this.saveFile(filename, buffer);
+			const docType = item.doktyp.toLowerCase() === "prop" ? "proposition"
+				: item.doktyp.toLowerCase() === "sou" ? "sou"
+				: "ovrigt";
 			await this.saveMetadata(filePath, {
 				title: item.titel,
 				sourceUrl: pdfAttachment.fil_url,
 				source: "riksdagen",
 				docId: item.dok_id,
-				docType: item.doktyp,
+				doktyp: item.doktyp,
+				docType,
+				audience: "specialist",
 				date: item.datum,
 			});
 
@@ -153,7 +165,9 @@ export class RiksdagenClient extends BaseScraper {
 				metadata: {
 					source: "riksdagen",
 					docId: item.dok_id,
-					docType: item.doktyp,
+					doktyp: item.doktyp,
+					docType,
+					audience: "specialist",
 					date: item.datum,
 					type: "pdf",
 				},

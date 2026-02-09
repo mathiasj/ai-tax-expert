@@ -7,6 +7,7 @@ import { parsePdf, parseTextFile } from "../processing/pdf-parser.js";
 import { chunkDocument } from "../processing/chunker.js";
 import { embedTexts } from "../processing/embedder.js";
 import { indexPoints, type IndexPoint } from "../processing/indexer.js";
+import { classifyDocType, classifyAudience, detectTaxArea } from "../processing/classifier.js";
 import { documentQueue, QUEUE_NAME, connection, type DocumentJob } from "./queue.js";
 
 const logger = pino({ name: "document-worker" });
@@ -26,11 +27,24 @@ async function updateStatus(
 		.where(eq(documents.id, documentId));
 }
 
+function computeContentHash(text: string): string {
+	const hasher = new Bun.CryptoHasher("sha256");
+	hasher.update(text);
+	return hasher.digest("hex");
+}
+
 async function processDocument(job: Job<DocumentJob>): Promise<void> {
 	const { documentId, filePath, title } = job.data;
 	logger.info({ documentId, title }, "Processing document");
 
 	try {
+		// Fetch full document record from DB for metadata
+		const [doc] = await db
+			.select()
+			.from(documents)
+			.where(eq(documents.id, documentId))
+			.limit(1);
+
 		// 1. Parse
 		await updateStatus(documentId, "parsing");
 		const isPdf = filePath.toLowerCase().endsWith(".pdf");
@@ -42,9 +56,51 @@ async function processDocument(job: Job<DocumentJob>): Promise<void> {
 			return;
 		}
 
-		// 2. Chunk
+		// Compute and store content hash
+		const contentHash = computeContentHash(parsed.text);
+
+		// For refresh jobs: skip if content unchanged
+		if (job.name === "refresh" && doc?.contentHash === contentHash) {
+			logger.info({ documentId }, "Content unchanged, skipping");
+			await db
+				.update(documents)
+				.set({ lastCheckedAt: new Date(), updatedAt: new Date() })
+				.where(eq(documents.id, documentId));
+			return;
+		}
+
+		// Auto-classify if metadata is missing
+		const docMeta = doc?.metadata as Record<string, unknown> | null;
+		const classifiedDocType = doc?.docType ?? classifyDocType(doc?.source ?? "manual", docMeta ?? {});
+		const classifiedAudience = doc?.audience ?? classifyAudience(doc?.source ?? "manual", docMeta ?? {});
+		const classifiedTaxArea = doc?.taxArea ?? detectTaxArea(title, parsed.text.slice(0, 2000));
+
+		// Update content hash + classification on document
+		const docUpdates: Record<string, unknown> = { contentHash, updatedAt: new Date() };
+		if (!doc?.docType && classifiedDocType) docUpdates.docType = classifiedDocType;
+		if (!doc?.audience && classifiedAudience) docUpdates.audience = classifiedAudience;
+		if (!doc?.taxArea && classifiedTaxArea) docUpdates.taxArea = classifiedTaxArea;
+
+		await db
+			.update(documents)
+			.set(docUpdates)
+			.where(eq(documents.id, documentId));
+
+		// 2. Chunk — build rich metadata from document record
 		await updateStatus(documentId, "chunking");
-		const docChunks = await chunkDocument(parsed.text, { documentId, title });
+		const documentMetadata: Record<string, unknown> = {
+			documentId,
+			title,
+		};
+		if (doc) {
+			if (doc.source) documentMetadata.source = doc.source;
+			if (doc.sourceUrl) documentMetadata.sourceUrl = doc.sourceUrl;
+		}
+		documentMetadata.docType = classifiedDocType;
+		documentMetadata.audience = classifiedAudience;
+		if (classifiedTaxArea) documentMetadata.taxArea = classifiedTaxArea;
+
+		const docChunks = await chunkDocument(parsed.text, documentMetadata);
 		logger.info({ documentId, chunks: docChunks.length }, "Chunked");
 
 		// 3. Embed

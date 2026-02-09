@@ -16,13 +16,21 @@ export async function retrieveChunks(
 
 	const queryEmbedding = await embedSingle(query);
 
-	const filter =
-		options?.filters?.source?.length || options?.filters?.documentId?.length
-			? {
-					source: options.filters.source,
-					documentId: options.filters.documentId,
-				}
-			: undefined;
+	const hasFilters = options?.filters?.source?.length
+		|| options?.filters?.documentId?.length
+		|| options?.filters?.docType?.length
+		|| options?.filters?.audience?.length
+		|| options?.filters?.taxArea?.length;
+
+	const filter = hasFilters
+		? {
+				source: options!.filters!.source,
+				documentId: options!.filters!.documentId,
+				docType: options!.filters!.docType,
+				audience: options!.filters!.audience,
+				taxArea: options!.filters!.taxArea,
+			}
+		: undefined;
 
 	const results = await searchSimilarFiltered(queryEmbedding, topK, filter);
 

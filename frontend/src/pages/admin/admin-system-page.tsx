@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { useSystemHealth } from "@/hooks/use-admin";
+import { api } from "@/lib/api-client";
 
 function StatusDot({ ok }: { ok: boolean }) {
 	return (
@@ -40,6 +42,19 @@ function ServiceCard({
 
 export function AdminSystemPage() {
 	const { data, isLoading, refetch } = useSystemHealth();
+	const [refreshing, setRefreshing] = useState(false);
+
+	const handleTriggerRefresh = async () => {
+		setRefreshing(true);
+		try {
+			await api.post("/api/admin/refresh/trigger", {});
+			setTimeout(refetch, 1000);
+		} catch {
+			// ignore
+		} finally {
+			setRefreshing(false);
+		}
+	};
 
 	if (isLoading && !data) {
 		return (
@@ -103,6 +118,28 @@ export function AdminSystemPage() {
 						</div>
 					) : (
 						<p className="text-red-500">{data?.bullmq.error}</p>
+					)}
+				</ServiceCard>
+
+				{/* Refresh Scheduler */}
+				<ServiceCard title="Refresh Scheduler" status={data?.refreshScheduler?.status ?? "error"}>
+					{data?.refreshScheduler?.status === "ok" ? (
+						<>
+							<div className="grid grid-cols-2 gap-1">
+								<p>Väntande: <span className="font-medium text-gray-900 dark:text-gray-100">{data.refreshScheduler.waiting}</span></p>
+								<p>Aktiva: <span className="font-medium text-gray-900 dark:text-gray-100">{data.refreshScheduler.active}</span></p>
+								<p>Klara: <span className="font-medium text-gray-900 dark:text-gray-100">{data.refreshScheduler.completed?.toLocaleString()}</span></p>
+								<p>Misslyckade: <span className="font-medium text-red-600 dark:text-red-400">{data.refreshScheduler.failed}</span></p>
+							</div>
+							{data.refreshScheduler.nextRun && (
+								<p className="mt-1">Nästa körning: <span className="font-medium text-gray-900 dark:text-gray-100">{new Date(data.refreshScheduler.nextRun).toLocaleString("sv-SE")}</span></p>
+							)}
+							<Button variant="secondary" size="sm" className="mt-2" onClick={handleTriggerRefresh} disabled={refreshing}>
+								{refreshing ? "Kör..." : "Kör nu"}
+							</Button>
+						</>
+					) : (
+						<p className="text-red-500">{data?.refreshScheduler?.error ?? "Ej konfigurerad"}</p>
 					)}
 				</ServiceCard>
 			</div>

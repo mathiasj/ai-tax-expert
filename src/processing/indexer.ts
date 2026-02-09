@@ -129,6 +129,9 @@ export async function searchSimilar(
 export interface QdrantFilter {
 	source?: string[];
 	documentId?: string[];
+	docType?: string[];
+	audience?: string[];
+	taxArea?: string[];
 }
 
 export async function searchSimilarFiltered(
@@ -151,6 +154,24 @@ export async function searchSimilarFiltered(
 		mustConditions.push({
 			key: "documentId",
 			match: { any: filter.documentId },
+		});
+	}
+	if (filter?.docType?.length) {
+		mustConditions.push({
+			key: "docType",
+			match: { any: filter.docType },
+		});
+	}
+	if (filter?.audience?.length) {
+		mustConditions.push({
+			key: "audience",
+			match: { any: filter.audience },
+		});
+	}
+	if (filter?.taxArea?.length) {
+		mustConditions.push({
+			key: "taxArea",
+			match: { any: filter.taxArea },
 		});
 	}
 

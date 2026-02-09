@@ -4,6 +4,7 @@ export interface SourceCitation {
 	title: string;
 	sourceUrl: string | null;
 	section: string | null;
+	docType: string | null;
 	relevanceScore: number;
 }
 
@@ -41,6 +42,9 @@ export interface QueryRequest {
 	filters?: {
 		source?: string[];
 		documentId?: string[];
+		docType?: string[];
+		audience?: string[];
+		taxArea?: string[];
 	};
 }
 
@@ -153,6 +157,12 @@ export interface AdminDocumentDetail {
 	sourceUrl: string | null;
 	filePath: string | null;
 	status: string;
+	docType: string | null;
+	audience: string | null;
+	taxArea: string | null;
+	refreshPolicy: string;
+	contentHash: string | null;
+	lastCheckedAt: string | null;
 	metadata: Record<string, unknown> | null;
 	errorMessage: string | null;
 	supersededById: string | null;
@@ -237,6 +247,7 @@ export interface SystemHealth {
 	redis: { status: string; latencyMs?: number; error?: string };
 	postgres: { status: string; error?: string };
 	bullmq: { status: string; waiting?: number; active?: number; completed?: number; failed?: number; error?: string };
+	refreshScheduler?: { status: string; waiting?: number; active?: number; completed?: number; failed?: number; nextRun?: string; error?: string };
 	documents: {
 		byStatus: Record<string, number>;
 		bySource: Record<string, number>;

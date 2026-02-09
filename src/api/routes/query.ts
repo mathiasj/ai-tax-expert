@@ -19,6 +19,9 @@ const querySchema = z.object({
 		.object({
 			source: z.array(z.string()).optional(),
 			documentId: z.array(z.string()).optional(),
+			docType: z.array(z.string()).optional(),
+			audience: z.array(z.string()).optional(),
+			taxArea: z.array(z.string()).optional(),
 		})
 		.optional(),
 });

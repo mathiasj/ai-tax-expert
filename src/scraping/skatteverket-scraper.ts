@@ -137,11 +137,18 @@ export class SkatteverketScraper extends BaseScraper {
 
 		const filename = `${section}_${sanitizeFilename(title)}.txt`;
 		const filePath = await this.saveFile(filename, content);
+		const docType = section === "stallningstaganden" ? "stallningstagande"
+			: section === "handledningar" ? "handledning"
+			: "ovrigt";
+		const audience = section === "handledningar" ? "allman" : "specialist";
+
 		await this.saveMetadata(filePath, {
 			title,
 			sourceUrl: url,
 			source: "skatteverket",
 			section,
+			docType,
+			audience,
 		});
 
 		return {
@@ -149,7 +156,7 @@ export class SkatteverketScraper extends BaseScraper {
 			sourceUrl: url,
 			content,
 			filePath,
-			metadata: { source: "skatteverket", section, type: "html" },
+			metadata: { source: "skatteverket", section, type: "html", docType, audience },
 		};
 	}
 }
