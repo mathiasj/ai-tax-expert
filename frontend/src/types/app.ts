@@ -5,6 +5,7 @@ export interface ChatMessage {
 	role: "user" | "assistant";
 	content: string;
 	citations?: SourceCitation[];
+	queryId?: string;
 	timestamp: string;
 }
 

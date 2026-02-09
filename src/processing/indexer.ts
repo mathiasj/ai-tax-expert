@@ -77,6 +77,31 @@ export async function indexPoints(points: IndexPoint[]): Promise<string[]> {
 	return ids;
 }
 
+export async function deletePoints(pointIds: string[]): Promise<void> {
+	if (pointIds.length === 0) return;
+	const client = getClient();
+	await client.delete(env.QDRANT_COLLECTION, { points: pointIds });
+	logger.info({ count: pointIds.length }, "Deleted Qdrant points");
+}
+
+export interface CollectionInfo {
+	pointsCount: number;
+	vectorsCount: number;
+	status: string;
+	segmentsCount: number;
+}
+
+export async function getCollectionInfo(): Promise<CollectionInfo> {
+	const client = getClient();
+	const info = await client.getCollection(env.QDRANT_COLLECTION);
+	return {
+		pointsCount: info.points_count ?? 0,
+		vectorsCount: info.indexed_vectors_count ?? 0,
+		status: info.status,
+		segmentsCount: info.segments_count ?? 0,
+	};
+}
+
 export async function searchSimilar(
 	queryEmbedding: number[],
 	limit = 5,

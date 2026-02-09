@@ -1,28 +1,15 @@
-import { Worker, Queue, type Job } from "bullmq";
-import IORedis from "ioredis";
+import { Worker, type Job } from "bullmq";
 import pino from "pino";
 import { eq } from "drizzle-orm";
-import { env } from "../config/env.js";
 import { db } from "../db/client.js";
 import { documents, chunks as chunksTable } from "../db/schema.js";
 import { parsePdf, parseTextFile } from "../processing/pdf-parser.js";
 import { chunkDocument } from "../processing/chunker.js";
 import { embedTexts } from "../processing/embedder.js";
 import { indexPoints, type IndexPoint } from "../processing/indexer.js";
+import { documentQueue, QUEUE_NAME, connection, type DocumentJob } from "./queue.js";
 
 const logger = pino({ name: "document-worker" });
-
-const QUEUE_NAME = "document-processing";
-
-const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-
-export const documentQueue = new Queue(QUEUE_NAME, { connection });
-
-interface DocumentJob {
-	documentId: string;
-	filePath: string;
-	title: string;
-}
 
 async function updateStatus(
 	documentId: string,

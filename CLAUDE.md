@@ -26,8 +26,9 @@ An AI-powered Swedish tax advisory system using RAG (Retrieval-Augmented Generat
 ```
 src/
 ├── config/env.ts          # Zod-validated environment config (LLM + RAG settings)
-├── db/schema.ts           # Drizzle tables: documents, chunks, queries, users, conversations
+├── db/schema.ts           # Drizzle tables: documents, chunks, queries, users, conversations, sources
 ├── db/client.ts           # Drizzle PostgreSQL client
+├── db/seed.ts             # Dev seed: test@example.se + admin@example.se
 ├── scraping/
 │   ├── base-scraper.ts    # Abstract base with rate limiting, retry, .meta.json sidecar
 │   ├── skatteverket-scraper.ts
@@ -37,8 +38,9 @@ src/
 │   ├── pdf-parser.ts      # PDF → clean text
 │   ├── chunker.ts         # Text → chunks (Swedish legal separators)
 │   ├── embedder.ts        # Chunks → OpenAI embeddings
-│   └── indexer.ts         # Embeddings → Qdrant (includes filtered search)
+│   └── indexer.ts         # Embeddings → Qdrant (includes filtered search, delete, collection info)
 ├── workers/
+│   ├── queue.ts               # Shared BullMQ queue instance (used by worker + admin routes)
 │   └── document-processor.ts  # BullMQ worker: parse → chunk → embed → index
 ├── core/
 │   ├── types.ts           # Shared RAG types (RetrievedChunk, RAGResponse, etc.)
@@ -68,9 +70,12 @@ src/
 ├── api/
 │   ├── routes/health.ts
 │   ├── routes/auth.ts     # POST /auth/register, /auth/login, GET /auth/me
-│   ├── routes/query.ts    # POST /api/query — full RAG pipeline
+│   ├── routes/query.ts    # POST /api/query — full RAG pipeline, POST /api/queries/:id/feedback
 │   ├── routes/analytics.ts # GET /analytics/summary, /analytics/popular
+│   ├── routes/documents.ts # GET /api/documents — list with search/filter/chunkCount
+│   ├── routes/admin.ts    # /api/admin/* — documents CRUD, sources CRUD, queries/feedback, system health
 │   ├── middleware/auth.ts  # optionalAuth + requireAuth JWT middleware
+│   ├── middleware/admin.ts # requireAdmin (requireAuth + role === "admin")
 │   ├── middleware/rate-limiter.ts  # Redis sliding window per IP/user
 │   └── middleware/error-handler.ts # X-Request-Id, structured errors
 └── index.ts               # Hono server entry point
@@ -86,33 +91,43 @@ frontend/
 │   │   ├── auth.ts            # localStorage token get/set/remove, parsePayload, isExpired
 │   │   └── utils.ts           # cn() class helper, formatDate, formatMs
 │   ├── types/
-│   │   ├── api.ts             # Mirror backend: QueryResponse, SourceCitation, AnalyticsSummary
+│   │   ├── api.ts             # Mirror backend: QueryResponse, SourceCitation, Admin* types
 │   │   └── app.ts             # Frontend-only: ChatMessage, Conversation, Theme
 │   ├── hooks/
 │   │   ├── use-auth.ts        # login/register/logout actions
 │   │   ├── use-query-mutation.ts  # POST /api/query with loading state
 │   │   ├── use-analytics.ts   # GET /api/analytics/*
+│   │   ├── use-admin.ts       # All admin data hooks (docs, sources, queries, health)
+│   │   ├── use-feedback.ts    # POST /api/queries/:id/feedback
 │   │   ├── use-conversations.ts   # localStorage-based conversation list
 │   │   ├── use-theme.ts       # dark/light/system toggle
 │   │   └── use-local-storage.ts   # Generic typed localStorage hook
 │   ├── contexts/
 │   │   └── auth-context.tsx   # AuthProvider, verifies token on mount via GET /auth/me
 │   ├── components/
-│   │   ├── ui/                # button, input, textarea, card, badge, spinner, empty-state, error-boundary, toast
+│   │   ├── ui/                # button, input, textarea, card, badge, spinner, empty-state,
+│   │   │                      # error-boundary, toast, select, dialog, drawer, pagination
 │   │   ├── layout/            # app-layout (sidebar+header+outlet), sidebar, header
-│   │   ├── auth/              # login-form, register-form, protected-route
+│   │   ├── admin/             # admin-layout, admin-sidebar (separate from user layout)
+│   │   ├── auth/              # login-form, register-form, protected-route, admin-route
 │   │   ├── chat/              # chat-container, conversation-sidebar, message-list, message-bubble,
-│   │   │                      # assistant-message (markdown+citations), citation-list, citation-badge,
-│   │   │                      # chat-input, source-filter, typing-indicator
+│   │   │                      # assistant-message (markdown+citations+feedback), citation-list,
+│   │   │                      # citation-badge, chat-input, source-filter, typing-indicator
 │   │   ├── dashboard/         # stat-card, stats-grid, popular-questions
 │   │   └── settings/          # profile-form, theme-toggle
 │   ├── pages/
 │   │   ├── login-page.tsx, register-page.tsx
-│   │   ├── chat-page.tsx      # Main page at /
+│   │   ├── chat-page.tsx      # Main page at /chat
 │   │   ├── dashboard-page.tsx # /dashboard (auth required)
 │   │   ├── documents-page.tsx # /documents (stub)
 │   │   ├── evaluation-page.tsx # /evaluation (stub with sample data)
-│   │   └── settings-page.tsx  # /settings
+│   │   ├── settings-page.tsx  # /settings
+│   │   └── admin/
+│   │       ├── admin-overview-page.tsx   # /admin — key metrics + quick links
+│   │       ├── admin-documents-page.tsx  # /admin/documents — search, filter, detail drawer, CRUD
+│   │       ├── admin-sources-page.tsx    # /admin/sources — add/edit/delete source URLs
+│   │       ├── admin-queries-page.tsx    # /admin/queries — browse with feedback filter
+│   │       └── admin-system-page.tsx     # /admin/system — Qdrant/Redis/PG/BullMQ health
 │   └── data/
 │       └── sample-eval-results.ts  # Static eval data for stub page
 └── public/favicon.svg
@@ -150,13 +165,15 @@ docker compose up -d   # Start Qdrant, PostgreSQL, Redis
 - **RAG pipeline**: retrieve (top-K=20) → rerank (Cohere, top-N=5) → assemble (dedup, token budget=6000) → generate (LLM with Swedish tax system prompt) → cite sources as [Källa N]
 - **LLM providers**: Factory pattern with cached singleton; switch via `LLM_PROVIDER=openai|anthropic`
 - **Worker pipeline**: download → parse → chunk → embed → index (BullMQ, concurrency 2)
-- **Auth**: JWT (Hono HS256) + Bun.password (argon2id); `optionalAuth` on all `/api/*`, `requireAuth` on analytics
+- **Auth**: JWT (Hono HS256) + Bun.password (argon2id); `optionalAuth` on all `/api/*`, `requireAuth` on analytics, `requireAdmin` on `/api/admin/*`
+- **Admin**: Separate admin section (`/admin/*`) with own layout, sidebar, and route guard; admin seed user `admin@example.se`/`admin123`; BullMQ queue shared via `src/workers/queue.ts`
 - **Caching**: Redis with SHA-256 query key; skips cache for conversation follow-ups; graceful on Redis failure
 - **Rate limiting**: Redis sliding window (60s); anonymous 10/min, authenticated 60/min; X-RateLimit-* headers
 - **Conversations**: Last 5 turns prepended as user/assistant messages to LLM; new conversation created per query if none provided
 - **Fallbacks**: Try/catch per pipeline stage — retrieval failure → Swedish fallback, reranker failure → vector scores, LLM failure → fallback + citations
 - **Server**: Hono with `export default { port, fetch: app.fetch }` pattern for Bun
-- **Frontend routing**: React Router v7 — `/login`, `/register` public; `/` (chat), `/dashboard`, `/documents`, `/evaluation`, `/settings` protected
+- **User feedback**: Thumbs up/down on assistant messages; stored via `POST /api/queries/:id/feedback`; `queryId` returned from RAG pipeline
+- **Frontend routing**: React Router v7 — `/login`, `/register` public; `/chat`, `/dashboard`, `/documents`, `/evaluation`, `/settings` protected; `/admin/*` admin-only (separate layout)
 - **Frontend state**: React context (auth) + local state (chat) — no state library
 - **Frontend conversations**: localStorage-backed (no backend list endpoint); conversationId from first query response used for follow-ups
 - **Frontend theme**: Tailwind v4 dark mode via class on `<html>`, persisted in localStorage
@@ -181,11 +198,41 @@ docker compose up -d   # Start Qdrant, PostgreSQL, Redis
   "filters": { "source": ["riksdagen"], "documentId": [] }
 }
 ```
-Returns: `{ answer, citations, conversationId, cached, timings, metadata }`
+Returns: `{ answer, citations, conversationId, queryId, cached, timings, metadata }`
+
+### Feedback (requires auth)
+- `POST /api/queries/:id/feedback` — `{ rating: 1|-1, comment? }`
+
+### Documents (requires auth)
+- `GET /api/documents` — `?source=&status=&search=&limit=&offset=` → `{ documents, total }` (includes chunkCount, errorMessage, supersededById)
 
 ### Analytics (requires auth)
 - `GET /api/analytics/summary` — total queries, 24h/7d/30d counts, avg response time
 - `GET /api/analytics/popular` — top 20 most frequent questions
+
+### Admin (requires admin role)
+All endpoints under `/api/admin/` require `requireAdmin` middleware.
+
+#### Documents
+- `GET /admin/documents/:id` — detail + chunkCount + errorMessage + supersededBy
+- `GET /admin/documents/:id/chunks` — paginated chunk list with content
+- `DELETE /admin/documents/:id` — remove document + chunks (PG cascade) + Qdrant points
+- `POST /admin/documents/:id/reprocess` — reset to pending, queue in BullMQ
+- `PATCH /admin/documents/:id` — update supersededById/supersededNote
+
+#### Sources
+- `GET /admin/sources` — list with filter (source, status) + documentCount
+- `POST /admin/sources` — add (`{ url, source, label }`)
+- `PATCH /admin/sources/:id` — change status/label
+- `DELETE /admin/sources/:id` — remove (does not delete documents)
+
+#### Queries
+- `GET /admin/queries` — paginated list: question, answer (truncated), feedback, timing; filter by feedback
+- `GET /admin/queries/:id` — full answer + metadata + sources + feedback
+- `GET /admin/queries/stats` — feedback statistics: positive/negative/none counts
+
+#### System Health
+- `GET /admin/health` — Qdrant stats, BullMQ queue counts, Redis ping, documents by status/source, total chunks
 
 ## Data Sources
 
@@ -201,6 +248,7 @@ Returns: `{ answer, citations, conversationId, cached, timings, metadata }`
 **Phase 2: COMPLETE** — RAG pipeline core (LLM providers, retriever, reranker, context assembler, prompts, orchestrator, query endpoint, evaluation framework)
 **Phase 3: COMPLETE** — JWT auth (Hono JWT + argon2id), conversation history (last 5 turns), Redis cache (SHA-256 key), sliding-window rate limiter, Swedish fallbacks, analytics endpoints
 **Phase 4: COMPLETE** — React 18 + Vite 6 + Tailwind v4 frontend: chat UI with markdown + citation badges, conversation history (localStorage), source filters, dashboard with analytics, documents stub, evaluation stub with sample data, settings with theme toggle, JWT auth flow (login/register/protected routes), responsive sidebar layout
+**Phase 5: COMPLETE** — Admin dashboard: separate admin layout/sidebar/routes (`/admin/*`), documents CRUD (search/filter/detail drawer/delete/reprocess/mark superseded), sources CRUD (add/edit status/delete URLs), queries browser (feedback filter, expandable answers, feedback stats), system health monitoring (Qdrant/Redis/PG/BullMQ auto-refresh), user feedback (thumbs up/down in chat, stored per query), `requireAdmin` middleware, admin seed user, `sources` table, superseded/feedback fields on documents/queries
 
 ## Known Issues
 

@@ -1,10 +1,16 @@
-import { integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const documentSourceEnum = pgEnum("document_source", [
 	"skatteverket",
 	"lagrummet",
 	"riksdagen",
 	"manual",
+]);
+
+export const sourceStatusEnum = pgEnum("source_status", [
+	"active",
+	"paused",
+	"failed",
 ]);
 
 export const documentStatusEnum = pgEnum("document_status", [
@@ -26,6 +32,9 @@ export const documents = pgTable("documents", {
 	status: documentStatusEnum("status").notNull().default("pending"),
 	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
 	errorMessage: text("error_message"),
+	supersededById: uuid("superseded_by_id"),
+	supersededAt: timestamp("superseded_at"),
+	supersededNote: text("superseded_note"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -68,7 +77,23 @@ export const queries = pgTable("queries", {
 	answer: text("answer"),
 	sourceChunkIds: uuid("source_chunk_ids").array(),
 	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+	feedbackRating: integer("feedback_rating"),
+	feedbackComment: text("feedback_comment"),
+	feedbackAt: timestamp("feedback_at"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const sources = pgTable("sources", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	url: text("url").notNull().unique(),
+	source: documentSourceEnum("source").notNull(),
+	label: varchar("label", { length: 255 }),
+	status: sourceStatusEnum("status").notNull().default("active"),
+	lastScrapedAt: timestamp("last_scraped_at"),
+	lastError: text("last_error"),
+	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const evaluationRuns = pgTable("evaluation_runs", {

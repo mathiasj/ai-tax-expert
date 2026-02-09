@@ -49,7 +49,7 @@ An AI-powered advisory system that answers Swedish tax questions using RAG (Retr
 | Reranking | Cohere |
 | Scraping | Cheerio + pdf-parse |
 | Chunking | LangChain RecursiveCharacterTextSplitter |
-| Frontend | React (Phase 4) |
+| Frontend | React 18 + Vite 6 + Tailwind CSS v4 |
 
 ## Getting Started
 
@@ -75,9 +75,24 @@ docker compose up -d
 bun run db:generate
 bun run db:migrate
 
-# Start dev server
+# Start backend dev server
 bun run dev
+
+# Start frontend dev server (in separate terminal)
+bun run frontend:dev
+
+# Or start both at once
+bun run dev:all
 ```
+
+### Default Users (dev mode)
+
+On startup, two seed users are created automatically:
+
+| Email | Password | Role |
+|-------|----------|------|
+| `test@example.se` | `test123` | user |
+| `admin@example.se` | `admin123` | admin |
 
 ### Ingest Data
 
@@ -101,11 +116,18 @@ bun run worker
 # Health check
 curl http://localhost:3000/health
 
-# Query (Phase 3)
+# Query
 curl -X POST http://localhost:3000/api/query \
   -H "Content-Type: application/json" \
   -d '{"question": "Hur beskattas kapitalvinst vid bostadsförsäljning?"}'
 ```
+
+### Frontend
+
+The frontend runs at `http://localhost:5173` and proxies API requests to the backend.
+
+- **Chat** (`/chat`) — Main chat interface with source filters, markdown answers, citation badges, and thumbs up/down feedback
+- **Admin** (`/admin`) — Separate admin dashboard (admin users only) for managing documents, sources, queries, and monitoring system health
 
 ## Development Phases
 
@@ -113,54 +135,49 @@ curl -X POST http://localhost:3000/api/query \
 
 - [x] Project scaffolding (Bun, TypeScript, Biome, Docker Compose)
 - [x] Database schema (Drizzle ORM — documents, chunks, queries, users)
-- [x] Scraping infrastructure
-  - [x] Base scraper with rate limiting and retry
-  - [x] Skatteverket scraper (ställningstaganden, handledningar)
-  - [x] Lagrummet client (HFD tax cases)
-  - [x] Riksdagen client (propositions, SOU reports)
-- [x] Processing pipeline
-  - [x] PDF parser (pdf-parse + text cleaning)
-  - [x] Chunker (Swedish legal separators: §, kap, Avdelning, Avsnitt)
-  - [x] Embedder (OpenAI text-embedding-3-large, batched)
-  - [x] Indexer (Qdrant upsert with metadata)
+- [x] Scraping infrastructure (Skatteverket, Lagrummet, Riksdagen)
+- [x] Processing pipeline (PDF parse → chunk → embed → Qdrant index)
 - [x] BullMQ worker (async document processing)
-- [x] Hono API server (health check)
+- [x] Hono API server
 
-### Phase 2: RAG Pipeline Core
+### Phase 2: RAG Pipeline Core ✅
 
-- [ ] Query embedding (same model as document embedding)
-- [ ] Qdrant similarity search with metadata filtering
-- [ ] Cohere reranking of retrieved chunks
-- [ ] Context assembly (deduplication, ordering, token budget)
-- [ ] LLM answer generation with source citations
-- [ ] Prompt engineering for Swedish tax domain
-- [ ] Evaluation framework (relevance, faithfulness, answer quality)
+- [x] Query embedding + Qdrant similarity search with metadata filtering
+- [x] Cohere reranking of retrieved chunks
+- [x] Context assembly (deduplication, ordering, token budget)
+- [x] LLM answer generation with source citations ([Källa N])
+- [x] Prompt engineering for Swedish tax domain
+- [x] Evaluation framework (relevance, faithfulness, citation accuracy)
 
-### Phase 3: Query API & Refinements
+### Phase 3: Query API & Refinements ✅
 
-- [ ] `/api/query` endpoint — full RAG pipeline
-- [ ] Conversation history / follow-up questions
-- [ ] Query logging and analytics
-- [ ] Source citation formatting with links
-- [ ] Rate limiting and authentication
-- [ ] Caching layer for frequent queries
-- [ ] Error handling and fallback responses
+- [x] `/api/query` endpoint — full RAG pipeline
+- [x] JWT auth (Hono HS256 + argon2id) + conversation history (last 5 turns)
+- [x] Redis cache (SHA-256 query key) + sliding-window rate limiter
+- [x] Swedish-language fallback responses + analytics endpoints
 
-### Phase 4: Frontend
+### Phase 4: Frontend ✅
 
-- [ ] React app with chat interface
-- [ ] Markdown rendering for answers
-- [ ] Source panel with expandable citations
-- [ ] Query history sidebar
-- [ ] Swedish language UI
-- [ ] Mobile-responsive design
+- [x] React 18 + Vite 6 + Tailwind v4 chat interface
+- [x] Markdown rendering + citation badges + source filters
+- [x] Conversation history (localStorage) + responsive sidebar
+- [x] Dashboard, settings, theme toggle, JWT auth flow
 
-### Phase 5: Production & Ops
+### Phase 5: Admin Dashboard ✅
+
+- [x] Separate admin layout, sidebar, and routes (`/admin/*`)
+- [x] Document management (search, filter, detail drawer, delete, reprocess, mark superseded)
+- [x] Source URL management (CRUD with status)
+- [x] Query browser with feedback stats and expandable answers
+- [x] System health monitoring (Qdrant, Redis, PostgreSQL, BullMQ — auto-refresh)
+- [x] User feedback (thumbs up/down on chat answers, stored per query)
+- [x] `requireAdmin` middleware + admin seed user
+
+### Phase 6: Production & Ops
 
 - [ ] Deployment pipeline (Docker, CI/CD)
 - [ ] Monitoring and alerting
 - [ ] Scheduled scraping (keep data fresh)
-- [ ] User feedback collection
 - [ ] A/B testing for prompt variations
 - [ ] Cost optimization (caching, model selection)
 
@@ -169,15 +186,23 @@ curl -X POST http://localhost:3000/api/query \
 ```
 src/
 ├── config/          # Zod-validated environment config
-├── db/              # Drizzle schema and client
-├── scraping/        # Data source scrapers
-├── processing/      # PDF parsing, chunking, embedding, indexing
-├── workers/         # BullMQ background jobs
-├── core/            # RAG pipeline (Phase 2)
-├── api/             # Hono routes and middleware
-└── index.ts         # Server entry point
+├── db/              # Drizzle schema, client, seed
+├── auth/            # JWT signing/verification, password hashing
+├── scraping/        # Data source scrapers (Skatteverket, Lagrummet, Riksdagen)
+├── processing/      # PDF parsing, chunking, embedding, Qdrant indexing
+├── workers/         # BullMQ queue + document processing worker
+├── core/            # RAG pipeline, LLM providers, evaluation framework
+├── api/
+│   ├── routes/      # health, auth, query, documents, analytics, admin
+│   └── middleware/   # auth, admin, rate-limiter, error-handler
+└── index.ts         # Hono server entry point
+frontend/
+├── src/
+│   ├── components/  # ui/, layout/, admin/, auth/, chat/, dashboard/, settings/
+│   ├── pages/       # User pages + admin/ subdirectory
+│   ├── hooks/       # Data fetching, auth, feedback, admin
+│   └── contexts/    # Auth context
 scripts/             # CLI tools for scraping and processing
-tests/               # Test suites
 data/
 ├── raw/             # Downloaded documents (gitignored)
 └── processed/       # Parsed output (gitignored)

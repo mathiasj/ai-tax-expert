@@ -32,7 +32,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 				{isUser ? (
 					<p className="text-sm whitespace-pre-wrap">{message.content}</p>
 				) : (
-					<AssistantMessage content={message.content} citations={message.citations ?? []} />
+					<AssistantMessage
+						content={message.content}
+						citations={message.citations ?? []}
+						queryId={message.queryId}
+					/>
 				)}
 			</div>
 		</div>

@@ -43,6 +43,7 @@ export interface RAGResponse {
 	context: AssembledContext;
 	timings: RAGTimings;
 	conversationId?: string;
+	queryId?: string;
 	cached?: boolean;
 }
 

@@ -178,22 +178,29 @@ export async function executeRAGQuery(
 		"RAG query completed",
 	);
 
-	// 6. Log query to PostgreSQL (fire-and-forget)
-	db.insert(queries)
-		.values({
-			question,
-			answer: answerContent,
-			conversationId,
-			userId: options?.userId,
-			sourceChunkIds: context.chunks.map((c) => c.id),
-			metadata: {
-				provider: llmName,
-				model: llmModel,
-				timings,
-				usage,
-			},
-		})
-		.catch((err) => logger.error({ err }, "Failed to log query"));
+	// 6. Log query to PostgreSQL
+	let queryId: string | undefined;
+	try {
+		const [inserted] = await db
+			.insert(queries)
+			.values({
+				question,
+				answer: answerContent,
+				conversationId,
+				userId: options?.userId,
+				sourceChunkIds: context.chunks.map((c) => c.id),
+				metadata: {
+					provider: llmName,
+					model: llmModel,
+					timings,
+					usage,
+				},
+			})
+			.returning({ id: queries.id });
+		queryId = inserted?.id;
+	} catch (err) {
+		logger.error({ err }, "Failed to log query");
+	}
 
 	const response: RAGResponse = {
 		answer: answerContent,
@@ -203,6 +210,7 @@ export async function executeRAGQuery(
 		context,
 		timings,
 		conversationId,
+		queryId,
 	};
 
 	// Cache the result (only for non-conversation queries, skip on fallback answers)

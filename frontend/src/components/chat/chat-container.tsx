@@ -65,6 +65,7 @@ export function ChatContainer() {
 					role: "assistant",
 					content: response.answer,
 					citations: response.citations as SourceCitation[],
+					queryId: response.queryId,
 					timestamp: new Date().toISOString(),
 				};
 

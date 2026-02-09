@@ -22,6 +22,13 @@
       "when": 1770593641389,
       "tag": "0002_bored_blink",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1770627639991,
+      "tag": "0003_tricky_firestar",
+      "breakpoints": true
     }
   ]
 }

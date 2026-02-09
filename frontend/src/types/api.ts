@@ -19,6 +19,7 @@ export interface QueryResponse {
 	answer: string;
 	citations: SourceCitation[];
 	conversationId: string;
+	queryId?: string;
 	cached: boolean;
 	timings: RAGTimings;
 	metadata: {
@@ -141,4 +142,104 @@ export interface UpdateProfileRequest {
 
 export interface UpdateProfileResponse {
 	user: UserInfo;
+}
+
+// ─── Admin Types ─────────────────────────────────────────────
+
+export interface AdminDocumentDetail {
+	id: string;
+	title: string;
+	source: string;
+	sourceUrl: string | null;
+	filePath: string | null;
+	status: string;
+	metadata: Record<string, unknown> | null;
+	errorMessage: string | null;
+	supersededById: string | null;
+	supersededAt: string | null;
+	supersededNote: string | null;
+	createdAt: string;
+	updatedAt: string;
+	chunkCount: number;
+}
+
+export interface AdminChunk {
+	id: string;
+	chunkIndex: number;
+	content: string;
+	qdrantPointId: string | null;
+	metadata: Record<string, unknown> | null;
+	createdAt: string;
+}
+
+export interface AdminChunksResponse {
+	chunks: AdminChunk[];
+	total: number;
+}
+
+export interface AdminSource {
+	id: string;
+	url: string;
+	source: string;
+	label: string | null;
+	status: string;
+	lastScrapedAt: string | null;
+	lastError: string | null;
+	metadata: Record<string, unknown> | null;
+	createdAt: string;
+	updatedAt: string;
+	documentCount: number;
+}
+
+export interface AdminSourcesResponse {
+	sources: AdminSource[];
+	total: number;
+}
+
+export interface AdminQuery {
+	id: string;
+	question: string;
+	answer: string | null;
+	feedbackRating: number | null;
+	feedbackComment: string | null;
+	metadata: Record<string, unknown> | null;
+	createdAt: string;
+}
+
+export interface AdminQueriesResponse {
+	queries: AdminQuery[];
+	total: number;
+}
+
+export interface AdminQueryDetail {
+	id: string;
+	question: string;
+	answer: string | null;
+	userId: string | null;
+	conversationId: string | null;
+	sourceChunkIds: string[] | null;
+	feedbackRating: number | null;
+	feedbackComment: string | null;
+	feedbackAt: string | null;
+	metadata: Record<string, unknown> | null;
+	createdAt: string;
+}
+
+export interface FeedbackStats {
+	total: number;
+	positive: number;
+	negative: number;
+	noFeedback: number;
+}
+
+export interface SystemHealth {
+	qdrant: { status: string; pointsCount?: number; vectorsCount?: number; segmentsCount?: number; error?: string };
+	redis: { status: string; latencyMs?: number; error?: string };
+	postgres: { status: string; error?: string };
+	bullmq: { status: string; waiting?: number; active?: number; completed?: number; failed?: number; error?: string };
+	documents: {
+		byStatus: Record<string, number>;
+		bySource: Record<string, number>;
+		totalChunks: number;
+	};
 }

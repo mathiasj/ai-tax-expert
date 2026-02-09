@@ -8,6 +8,7 @@ import pino from "pino";
 import { optionalAuth } from "./api/middleware/auth.js";
 import { errorHandler } from "./api/middleware/error-handler.js";
 import { rateLimiter } from "./api/middleware/rate-limiter.js";
+import { admin } from "./api/routes/admin.js";
 import { analytics } from "./api/routes/analytics.js";
 import { auth } from "./api/routes/auth.js";
 import { convRouter } from "./api/routes/conversations.js";
@@ -36,6 +37,7 @@ app.route("/api", analytics);
 app.route("/api", docs);
 app.route("/api", convRouter);
 app.route("/api", evaluation);
+app.route("/api/admin", admin);
 
 // Static file serving (SPA)
 const distPath = join(import.meta.dir, "../frontend/dist");
