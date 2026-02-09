@@ -36,7 +36,8 @@ async function request<T>(path: string, options: RequestInit & { skipAuthRedirec
 	if (res.status === 401) {
 		if (!options.skipAuthRedirect) {
 			removeToken();
-			window.location.href = "/login";
+			const isAdmin = window.location.pathname.startsWith("/admin");
+			window.location.href = isAdmin ? "/admin/login" : "/login";
 		}
 		throw new ApiClientError(401, { error: "Authentication required" });
 	}

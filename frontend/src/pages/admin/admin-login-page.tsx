@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import type { AuthResponse } from "@/types/api";
 
 export function AdminLoginPage() {
 	const { user, setUser, isLoading: authLoading } = useAuthContext();
+	const navigate = useNavigate();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -34,14 +35,14 @@ export function AdminLoginPage() {
 		setError(null);
 		setIsLoading(true);
 		try {
-			const res = await api.post<AuthResponse>("/api/auth/login", { email, password });
+			const res = await api.post<AuthResponse>("/api/auth/login", { email, password }, { skipAuthRedirect: true });
 			if (res.user.role !== "admin") {
 				setError("Kontot har inte administratörsbehörighet");
 				return;
 			}
 			setToken(res.token);
 			setUser(res.user);
-			// Navigate handled by the redirect above on re-render
+			navigate("/admin", { replace: true });
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Inloggningen misslyckades");
 		} finally {

@@ -14,6 +14,11 @@ function getClientId(c: Context): string {
 }
 
 export async function rateLimiter(c: Context, next: Next): Promise<void | Response> {
+	// Skip rate limiting in development
+	if (process.env.NODE_ENV !== "production") {
+		return next();
+	}
+
 	const clientId = getClientId(c);
 	const user = c.get("user");
 	const limit = user ? env.RATE_LIMIT_AUTHENTICATED : env.RATE_LIMIT_ANONYMOUS;

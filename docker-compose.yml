@@ -2,8 +2,8 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -12,22 +12,71 @@ services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: tax_expert
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: oven/bun:1
+    working_dir: /app
+    ports:
+      - "${PORT:-3050}:${PORT:-3050}"
+    volumes:
+      - .:/app
+      - backend_modules:/app/node_modules
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/tax_expert
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      NODE_ENV: development
+    command: sh -c "bun install && bun run db:migrate && bun run --watch src/index.ts"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  frontend:
+    image: oven/bun:1
+    working_dir: /app/frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:${FRONTEND_PORT:-5173}"
+    volumes:
+      - .:/app
+      - frontend_modules:/app/frontend/node_modules
+    environment:
+      API_URL: http://backend:${PORT:-3050}
+    command: sh -c "bun install && bun run vite --host 0.0.0.0 --port ${FRONTEND_PORT:-5173}"
+    depends_on:
+      - backend
 
 volumes:
   qdrant_data:
   postgres_data:
   redis_data:
+  backend_modules:
+  frontend_modules:
