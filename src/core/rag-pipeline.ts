@@ -103,14 +103,22 @@ export async function executeRAGQuery(
 	}
 
 	// 5. Build citations (before LLM so we can return them even on LLM failure)
-	const citations: SourceCitation[] = context.chunks.map((chunk) => ({
-		chunkId: chunk.id,
-		documentId: chunk.documentId,
-		title: (chunk.metadata.title as string) ?? "Utan titel",
-		sourceUrl: (chunk.metadata.sourceUrl as string) ?? null,
-		section: (chunk.metadata.section as string) ?? null,
-		relevanceScore: chunk.rerankScore,
-	}));
+	// Deduplicate by documentId — keep the chunk with the highest rerank score per document
+	const citationsByDoc = new Map<string, SourceCitation>();
+	for (const chunk of context.chunks) {
+		const existing = citationsByDoc.get(chunk.documentId);
+		if (!existing || chunk.rerankScore > existing.relevanceScore) {
+			citationsByDoc.set(chunk.documentId, {
+				chunkId: chunk.id,
+				documentId: chunk.documentId,
+				title: (chunk.metadata.title as string) ?? "Utan titel",
+				sourceUrl: (chunk.metadata.sourceUrl as string) ?? null,
+				section: (chunk.metadata.section as string) ?? null,
+				relevanceScore: chunk.rerankScore,
+			});
+		}
+	}
+	const citations: SourceCitation[] = [...citationsByDoc.values()];
 
 	// 4. Generate answer
 	let answerContent: string;

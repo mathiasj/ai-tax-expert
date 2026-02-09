@@ -1,4 +1,4 @@
-import * as cheerio from "cheerio";
+import Firecrawl from "@mendable/firecrawl-js";
 import { BaseScraper, type ScrapedDocument, type ScraperOptions } from "./base-scraper.js";
 
 const BASE_URL = "https://www4.skatteverket.se";
@@ -6,22 +6,34 @@ const BASE_URL = "https://www4.skatteverket.se";
 const SECTIONS = [
 	{
 		name: "stallningstaganden",
-		url: `${BASE_URL}/rattsligvagledning/stallningstaganden.html`,
+		url: `${BASE_URL}/rattsligvagledning/121.html`,
 		label: "Ställningstaganden",
 	},
 	{
 		name: "handledningar",
-		url: `${BASE_URL}/rattsligvagledning/handledningar.html`,
+		url: `${BASE_URL}/rattsligvagledning/110.html`,
 		label: "Handledningar",
 	},
 ];
 
 export class SkatteverketScraper extends BaseScraper {
-	constructor(options?: Partial<ScraperOptions>) {
+	private firecrawl: Firecrawl;
+
+	constructor(
+		options?: Partial<ScraperOptions> & { firecrawlApiKey?: string },
+	) {
 		super("skatteverket", {
 			outputDir: "data/raw/skatteverket",
 			...options,
 		});
+
+		const apiKey = options?.firecrawlApiKey || process.env.FIRECRAWL_API_KEY;
+		if (!apiKey) {
+			throw new Error(
+				"FIRECRAWL_API_KEY is required for Skatteverket scraper (www4 domain requires WAF bypass)",
+			);
+		}
+		this.firecrawl = new Firecrawl({ apiKey });
 	}
 
 	async scrape(): Promise<ScrapedDocument[]> {
@@ -31,21 +43,29 @@ export class SkatteverketScraper extends BaseScraper {
 		for (const section of SECTIONS) {
 			if (documents.length >= limit) break;
 
-			this.logger.info({ section: section.name }, "Scraping section");
+			this.logger.info({ section: section.name, url: section.url }, "Scraping section");
 
 			try {
 				const links = await this.extractDocumentLinks(section.url);
+				this.logger.info(
+					{ section: section.name, found: links.length },
+					"Found document links",
+				);
+
 				const remaining = limit - documents.length;
 				const toProcess = links.slice(0, remaining);
 
 				for (const link of toProcess) {
 					try {
+						await this.sleep(this.options.rateLimit);
 						const doc = await this.scrapeDocument(link.url, link.title, section.name);
-						documents.push(doc);
-						this.logger.info(
-							{ title: doc.title, total: documents.length },
-							"Scraped document",
-						);
+						if (doc) {
+							documents.push(doc);
+							this.logger.info(
+								{ title: doc.title, total: documents.length },
+								"Scraped document",
+							);
+						}
 					} catch (error) {
 						this.logger.error({ url: link.url, error }, "Failed to scrape document");
 					}
@@ -62,58 +82,67 @@ export class SkatteverketScraper extends BaseScraper {
 	private async extractDocumentLinks(
 		sectionUrl: string,
 	): Promise<Array<{ url: string; title: string }>> {
-		const response = await this.fetchWithRetry(sectionUrl);
-		const html = await response.text();
-		const $ = cheerio.load(html);
-
-		const links: Array<{ url: string; title: string }> = [];
-
-		$("a[href]").each((_, el) => {
-			const href = $(el).attr("href");
-			const title = $(el).text().trim();
-
-			if (href && title && (href.endsWith(".html") || href.endsWith(".pdf"))) {
-				const fullUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`;
-				links.push({ url: fullUrl, title });
-			}
+		const result = await this.firecrawl.scrape(sectionUrl, {
+			formats: ["links", "markdown"],
 		});
 
-		return links;
+		const allLinks = (result.links ?? []) as string[];
+
+		// Filter for document pages within rättslig vägledning
+		// Document links have numeric IDs like /rattsligvagledning/470363.html
+		const docLinks: Array<{ url: string; title: string }> = [];
+		const seen = new Set<string>();
+
+		for (const link of allLinks) {
+			const match = link.match(/\/rattsligvagledning\/(\d+)\.html/);
+			if (!match) continue;
+
+			// Strip query params for dedup
+			const cleanUrl = link.split("?")[0];
+			if (seen.has(cleanUrl)) continue;
+			seen.add(cleanUrl);
+
+			// Extract title from the markdown content if possible
+			const docId = match[1];
+			docLinks.push({ url: cleanUrl, title: `Dokument ${docId}` });
+		}
+
+		return docLinks;
 	}
 
 	private async scrapeDocument(
 		url: string,
-		title: string,
+		fallbackTitle: string,
 		section: string,
-	): Promise<ScrapedDocument> {
-		if (url.endsWith(".pdf")) {
-			const response = await this.fetchWithRetry(url);
-			const buffer = Buffer.from(await response.arrayBuffer());
-			const filename = `${section}_${sanitizeFilename(title)}.pdf`;
-			const filePath = await this.saveFile(filename, buffer);
-			await this.saveMetadata(filePath, { title, sourceUrl: url, source: "skatteverket", section });
+	): Promise<ScrapedDocument | null> {
+		const result = await this.firecrawl.scrape(url, {
+			formats: ["markdown"],
+		});
 
-			return {
-				title,
-				sourceUrl: url,
-				filePath,
-				metadata: { source: "skatteverket", section, type: "pdf" },
-			};
+		const markdown = result.markdown ?? "";
+		if (!markdown || markdown.length < 100) {
+			this.logger.debug({ url, length: markdown.length }, "Skipping page with insufficient content");
+			return null;
 		}
 
-		const response = await this.fetchWithRetry(url);
-		const html = await response.text();
-		const $ = cheerio.load(html);
+		// Extract title from first markdown heading or metadata
+		const title = extractTitle(markdown) || (result.metadata as Record<string, string>)?.title || fallbackTitle;
 
-		// Extract main content area
-		const content = $(".main-content, #main-content, article, .content-body")
-			.text()
-			.replace(/\s+/g, " ")
-			.trim();
+		// Clean the markdown: remove navigation chrome, keep content
+		const content = cleanMarkdown(markdown);
+		if (content.length < 100) {
+			this.logger.debug({ url, length: content.length }, "Skipping page after cleaning");
+			return null;
+		}
 
 		const filename = `${section}_${sanitizeFilename(title)}.txt`;
 		const filePath = await this.saveFile(filename, content);
-		await this.saveMetadata(filePath, { title, sourceUrl: url, source: "skatteverket", section });
+		await this.saveMetadata(filePath, {
+			title,
+			sourceUrl: url,
+			source: "skatteverket",
+			section,
+		});
 
 		return {
 			title,
@@ -123,6 +152,41 @@ export class SkatteverketScraper extends BaseScraper {
 			metadata: { source: "skatteverket", section, type: "html" },
 		};
 	}
+}
+
+function extractTitle(markdown: string): string | null {
+	// Try first line if it looks like a heading
+	const firstLine = markdown.split("\n")[0]?.trim();
+	if (firstLine && !firstLine.startsWith("[") && !firstLine.startsWith("-")) {
+		// Remove markdown heading markers and pipe-separated suffixes
+		return firstLine
+			.replace(/^#+\s*/, "")
+			.replace(/\s*\|.*$/, "")
+			.replace(/\\\|/g, "|")
+			.trim() || null;
+	}
+	return null;
+}
+
+function cleanMarkdown(markdown: string): string {
+	const lines = markdown.split("\n");
+	const cleaned: string[] = [];
+	let foundContent = false;
+
+	for (const line of lines) {
+		// Skip navigation/archive links at the top
+		if (!foundContent) {
+			if (line.startsWith("- [20") || line.startsWith("  - [20")) continue;
+			if (line.trim() === "- Arkiv") continue;
+			if (line.trim().length > 20) foundContent = true;
+		}
+
+		if (foundContent) {
+			cleaned.push(line);
+		}
+	}
+
+	return cleaned.join("\n").trim();
 }
 
 function sanitizeFilename(name: string): string {

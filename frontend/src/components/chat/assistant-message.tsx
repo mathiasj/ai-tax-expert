@@ -7,6 +7,7 @@ import { CitationList } from "./citation-list";
 interface AssistantMessageProps {
 	content: string;
 	citations: SourceCitation[];
+	showCitationList?: boolean;
 }
 
 function replaceCitations(text: string, citations: SourceCitation[]): string {
@@ -20,7 +21,7 @@ function replaceCitations(text: string, citations: SourceCitation[]): string {
 	});
 }
 
-export function AssistantMessage({ content, citations }: AssistantMessageProps) {
+export function AssistantMessage({ content, citations, showCitationList = true }: AssistantMessageProps) {
 	const processed = replaceCitations(content, citations);
 
 	return (
@@ -39,7 +40,7 @@ export function AssistantMessage({ content, citations }: AssistantMessageProps) 
 					{processed}
 				</ReactMarkdown>
 			</div>
-			<CitationList citations={citations} />
+			{showCitationList && <CitationList citations={citations} />}
 		</div>
 	);
 }

@@ -15,6 +15,7 @@ import { docs } from "./api/routes/documents.js";
 import { evaluation } from "./api/routes/evaluation.js";
 import { health } from "./api/routes/health.js";
 import { query } from "./api/routes/query.js";
+import { seedTestUser } from "./db/seed.js";
 
 const log = pino({ name: "server" });
 
@@ -60,6 +61,11 @@ if (hasDistDir) {
 }
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
+
+// Seed test user in development mode
+if (process.env.NODE_ENV !== "production") {
+	seedTestUser().catch((err) => log.warn({ err }, "Could not seed test user"));
+}
 
 log.info({ port }, "Starting server");
 

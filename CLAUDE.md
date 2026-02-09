@@ -15,7 +15,7 @@ An AI-powered Swedish tax advisory system using RAG (Retrieval-Augmented Generat
 - **Embeddings**: OpenAI `text-embedding-3-large` (1536 dims)
 - **LLM**: Configurable — OpenAI GPT-4o (default) or Anthropic Claude via `LLM_PROVIDER` env var
 - **Reranking**: Cohere `rerank-multilingual-v3.0` (Swedish support)
-- **Scraping**: Cheerio (HTML), pdf-parse (PDFs)
+- **Scraping**: Firecrawl (Skatteverket WAF bypass), Cheerio (HTML), pdf-parse (PDFs)
 - **Chunking**: LangChain RecursiveCharacterTextSplitter
 - **Frontend**: React 18, Vite 6, Tailwind CSS v4, React Router v7
 - **Linter/Formatter**: Biome (tabs, double quotes, semicolons)
@@ -126,7 +126,7 @@ bun run frontend:dev   # Start Vite dev server (port 5173, proxies /api to :3000
 bun run frontend:build # Production build → frontend/dist/
 bun run frontend:preview # Preview production build
 bun run dev:all        # Start both backend and frontend
-bun run scrape         # Run scrapers (--target skatteverket|lagrummet|riksdagen|all --limit N)
+bun run scrape         # Run scrapers (--target skatteverket|lagrummet|riksdagen|all --limit N --dry-run)
 bun run process        # Process raw documents → chunks → embeddings → Qdrant
 bun run worker         # Start BullMQ document processing worker
 bun run eval           # Run RAG evaluation suite (17 test questions)
@@ -140,7 +140,10 @@ docker compose up -d   # Start Qdrant, PostgreSQL, Redis
 ## Key Patterns
 
 - **Environment**: All config via Zod-validated `env.ts` with `.refine()` for conditional keys — crashes on startup if invalid
-- **Scrapers**: Extend `BaseScraper` — automatic rate limiting (2-3s), retry (3x), User-Agent header, `.meta.json` sidecar files for title/source/URL metadata
+- **Scrapers**: Extend `BaseScraper` — automatic rate limiting (2-3s), retry (3x), request timeout (30s default), health check, `.meta.json` sidecar files for title/source/URL metadata
+- **Skatteverket scraper**: Uses Firecrawl API to bypass F5 WAF on `www4.skatteverket.se`. Scrapes ställningstaganden (2500+) and handledningar from `/rattsligvagledning/`. Requires `FIRECRAWL_API_KEY` env var.
+- **Lagrummet scraper**: Fast-fails with warning when API is unreachable (data.lagrummet.se is intermittently down)
+- **Riksdagen scraper**: Deduplicates against existing files on disk, Cheerio-based HTML stripping
 - **Chunking**: Swedish legal separators: `§`, `Kap.`, `Kapitel`, `Avdelning`, `Avsnitt`
 - **Embedding**: Batched (100/batch), OpenAI text-embedding-3-large at 1536 dimensions
 - **Indexing**: Qdrant upsert in batches of 100, cosine distance, metadata filter support (source, documentId)
@@ -188,7 +191,7 @@ Returns: `{ answer, citations, conversationId, cached, timings, metadata }`
 
 | Source | What | Format |
 |--------|------|--------|
-| Skatteverket | Ställningstaganden, handledningar | HTML, PDF |
+| Skatteverket | Tax guidance from www.skatteverket.se (skatter, deklaration, fastigheter) | HTML via Playwright |
 | Lagrummet | HFD tax court cases | JSON/Atom feed, PDF |
 | Riksdagen | Tax propositions (prop), SOU reports | JSON API, HTML |
 
@@ -201,8 +204,8 @@ Returns: `{ answer, citations, conversationId, cached, timings, metadata }`
 
 ## Known Issues
 
-- Skatteverket scraper CSS selectors need tuning to match actual site structure (returns 0 documents)
-- Lagrummet API (`data.lagrummet.se`) is intermittently unreachable
+- Skatteverket `www4` subdomain blocked by F5 WAF — scraper uses Firecrawl API to bypass (requires `FIRECRAWL_API_KEY`)
+- Lagrummet API (`data.lagrummet.se`) is intermittently unreachable — scraper fast-fails with warning
 - `bun.lock` (not `bun.lockb`) is the lockfile format for Bun 1.3.9
 - PATH must include `$HOME/.bun/bin` explicitly when running from scripts
 - Port 3000 and 5000 often occupied on macOS — use `PORT=4000` as alternative

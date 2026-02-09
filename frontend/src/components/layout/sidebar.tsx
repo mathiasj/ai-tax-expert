@@ -7,7 +7,7 @@ interface SidebarProps {
 }
 
 const navItems = [
-	{ to: "/", label: "Chatt", icon: "💬" },
+	{ to: "/chat", label: "Chatt", icon: "💬" },
 	{ to: "/dashboard", label: "Dashboard", icon: "📊", adminOnly: true },
 	{ to: "/documents", label: "Dokument", icon: "📄", adminOnly: true },
 	{ to: "/evaluation", label: "Utvärdering", icon: "🧪", adminOnly: true },
@@ -25,7 +25,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 					<NavLink
 						key={item.to}
 						to={item.to}
-						end={item.to === "/"}
+						end
 						onClick={onNavigate}
 						className={({ isActive }) =>
 							cn(

@@ -17,7 +17,7 @@ export function useConversations() {
 	// Fetch conversations from API when authenticated
 	useEffect(() => {
 		if (!isAuthenticated) return;
-		api.get<ConversationsResponse>("/api/conversations")
+		api.get<ConversationsResponse>("/api/conversations", { skipAuthRedirect: true })
 			.then((res) => {
 				setApiConversations(
 					res.conversations.map((c) => ({
@@ -80,6 +80,7 @@ export function useConversations() {
 				try {
 					const res = await api.get<ConversationMessagesResponse>(
 						`/api/conversations/${id}/messages`,
+						{ skipAuthRedirect: true },
 					);
 					const messages: ChatMessage[] = [];
 					for (const msg of res.messages) {

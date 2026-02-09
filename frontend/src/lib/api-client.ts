@@ -17,7 +17,7 @@ class ApiClientError extends Error {
 	}
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit & { skipAuthRedirect?: boolean } = {}): Promise<T> {
 	const token = getToken();
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
@@ -34,8 +34,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 	});
 
 	if (res.status === 401) {
-		removeToken();
-		window.location.href = "/login";
+		if (!options.skipAuthRedirect) {
+			removeToken();
+			window.location.href = "/login";
+		}
 		throw new ApiClientError(401, { error: "Authentication required" });
 	}
 
@@ -48,13 +50,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 	return body as T;
 }
 
+interface RequestOptions {
+	skipAuthRedirect?: boolean;
+}
+
 export const api = {
-	get: <T>(path: string) => request<T>(path),
-	post: <T>(path: string, data: unknown) =>
-		request<T>(path, { method: "POST", body: JSON.stringify(data) }),
-	patch: <T>(path: string, data: unknown) =>
-		request<T>(path, { method: "PATCH", body: JSON.stringify(data) }),
-	delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+	get: <T>(path: string, opts?: RequestOptions) => request<T>(path, opts),
+	post: <T>(path: string, data: unknown, opts?: RequestOptions) =>
+		request<T>(path, { method: "POST", body: JSON.stringify(data), ...opts }),
+	patch: <T>(path: string, data: unknown, opts?: RequestOptions) =>
+		request<T>(path, { method: "PATCH", body: JSON.stringify(data), ...opts }),
+	delete: <T>(path: string, opts?: RequestOptions) => request<T>(path, { method: "DELETE", ...opts }),
 };
 
 export { ApiClientError };

@@ -40,6 +40,9 @@ const envSchema = z
 		RATE_LIMIT_ANONYMOUS: z.coerce.number().default(10),
 		RATE_LIMIT_AUTHENTICATED: z.coerce.number().default(60),
 
+		// Scraping
+		FIRECRAWL_API_KEY: z.string().optional(),
+
 		// RAG config
 		RERANKER_TOP_N: z.coerce.number().default(5),
 		RAG_TOP_K: z.coerce.number().default(20),

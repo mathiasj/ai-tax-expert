@@ -1,12 +1,12 @@
-import { useCallback, useState } from "react";
-import type { ChatMessage, Conversation } from "@/types/app";
-import type { SourceCitation } from "@/types/api";
-import { useQueryMutation } from "@/hooks/use-query-mutation";
 import { useConversations } from "@/hooks/use-conversations";
-import { MessageList } from "./message-list";
+import { useQueryMutation } from "@/hooks/use-query-mutation";
+import type { SourceCitation } from "@/types/api";
+import type { ChatMessage, Conversation } from "@/types/app";
+import { useCallback, useRef, useState } from "react";
 import { ChatInput } from "./chat-input";
-import { SourceFilter } from "./source-filter";
 import { ConversationSidebar } from "./conversation-sidebar";
+import { MessageList } from "./message-list";
+import { SourceFilter } from "./source-filter";
 
 export function ChatContainer() {
 	const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -16,6 +16,14 @@ export function ChatContainer() {
 	const { sendQuery, isLoading } = useQueryMutation();
 	const { conversations, addConversation, updateConversation, loadConversationMessages } =
 		useConversations();
+
+	// Refs to avoid stale closures in handleSend
+	const activeConvRef = useRef(activeConversationId);
+	activeConvRef.current = activeConversationId;
+	const backendConvRef = useRef(backendConversationId);
+	backendConvRef.current = backendConversationId;
+	const sourceFiltersRef = useRef(sourceFilters);
+	sourceFiltersRef.current = sourceFilters;
 
 	const loadConversation = useCallback(
 		async (id: string) => {
@@ -46,8 +54,9 @@ export function ChatContainer() {
 
 			const response = await sendQuery({
 				question: content,
-				conversationId: backendConversationId,
-				filters: sourceFilters.length > 0 ? { source: sourceFilters } : undefined,
+				conversationId: backendConvRef.current,
+				filters:
+					sourceFiltersRef.current.length > 0 ? { source: sourceFiltersRef.current } : undefined,
 			});
 
 			if (response) {
@@ -59,14 +68,10 @@ export function ChatContainer() {
 					timestamp: new Date().toISOString(),
 				};
 
-				const newMessages = (prev: ChatMessage[]) => [...prev, assistantMessage];
-				setMessages(newMessages);
-
-				// Get the updated messages for storage
 				setMessages((prev) => {
-					const updatedMessages = prev;
+					const updatedMessages = [...prev, assistantMessage];
 
-					if (!activeConversationId) {
+					if (!activeConvRef.current) {
 						// First message — create conversation
 						const convId = response.conversationId;
 						const title = content.length > 50 ? `${content.slice(0, 50)}...` : content;
@@ -80,23 +85,16 @@ export function ChatContainer() {
 						setActiveConversationId(convId);
 						setBackendConversationId(convId);
 					} else {
-						updateConversation(activeConversationId, {
+						updateConversation(activeConvRef.current, {
 							messages: updatedMessages,
 						});
 					}
 
-					return prev;
+					return updatedMessages;
 				});
 			}
 		},
-		[
-			sendQuery,
-			backendConversationId,
-			sourceFilters,
-			activeConversationId,
-			addConversation,
-			updateConversation,
-		],
+		[sendQuery, addConversation, updateConversation],
 	);
 
 	return (

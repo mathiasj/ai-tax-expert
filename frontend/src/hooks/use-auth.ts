@@ -14,7 +14,7 @@ export function useAuth() {
 			const res = await api.post<AuthResponse>("/api/auth/login", { email, password });
 			setToken(res.token);
 			setUser(res.user);
-			navigate("/");
+			navigate("/chat");
 		},
 		[navigate, setUser],
 	);
@@ -24,7 +24,7 @@ export function useAuth() {
 			const res = await api.post<AuthResponse>("/api/auth/register", { email, password, name });
 			setToken(res.token);
 			setUser(res.user);
-			navigate("/");
+			navigate("/chat");
 		},
 		[navigate, setUser],
 	);

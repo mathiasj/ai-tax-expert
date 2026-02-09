@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { LoginPage } from "@/pages/login-page";
 import { RegisterPage } from "@/pages/register-page";
+import { LandingPage } from "@/pages/landing-page";
 import { ChatPage } from "@/pages/chat-page";
 import { DashboardPage } from "@/pages/dashboard-page";
 import { DocumentsPage } from "@/pages/documents-page";
@@ -15,6 +16,7 @@ export function App() {
 		<BrowserRouter>
 			<AuthProvider>
 				<Routes>
+					<Route path="/" element={<LandingPage />} />
 					<Route path="/login" element={<LoginPage />} />
 					<Route path="/register" element={<RegisterPage />} />
 					<Route
@@ -24,7 +26,7 @@ export function App() {
 							</ProtectedRoute>
 						}
 					>
-						<Route path="/" element={<ChatPage />} />
+						<Route path="/chat" element={<ChatPage />} />
 						<Route path="/dashboard" element={<DashboardPage />} />
 						<Route path="/documents" element={<DocumentsPage />} />
 						<Route path="/evaluation" element={<EvaluationPage />} />

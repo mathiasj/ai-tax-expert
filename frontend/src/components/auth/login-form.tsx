@@ -24,8 +24,22 @@ export function LoginForm() {
 		}
 	}
 
+	function fillTestCredentials() {
+		setEmail("test@example.se");
+		setPassword("test123");
+	}
+
 	return (
 		<form onSubmit={handleSubmit} className="space-y-4">
+			{import.meta.env.DEV && (
+				<button
+					type="button"
+					onClick={fillTestCredentials}
+					className="w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900"
+				>
+					Dev-läge: Klicka för att fylla i testanvändare (test@example.se / test123)
+				</button>
+			)}
 			<Input
 				id="email"
 				label="E-post"

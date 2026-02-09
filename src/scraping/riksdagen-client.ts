@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import * as cheerio from "cheerio";
 import { BaseScraper, type ScrapedDocument, type ScraperOptions } from "./base-scraper.js";
 
 // Riksdagen Open Data API
@@ -31,6 +33,14 @@ export class RiksdagenClient extends BaseScraper {
 			const results = await this.searchTaxPropositions(limit);
 
 			for (const item of results) {
+				// Dedup: skip if file already exists on disk
+				const txtPath = `${this.options.outputDir}/${item.doktyp}_${item.dok_id}.txt`;
+				const pdfPath = `${this.options.outputDir}/${item.doktyp}_${item.dok_id}.pdf`;
+				if (existsSync(txtPath) || existsSync(pdfPath)) {
+					this.logger.info({ id: item.dok_id }, "Skipping already-scraped document");
+					continue;
+				}
+
 				try {
 					const doc = await this.fetchProposition(item);
 					documents.push(doc);
@@ -48,9 +58,18 @@ export class RiksdagenClient extends BaseScraper {
 	}
 
 	private async searchTaxPropositions(limit: number): Promise<RiksdagenDocument[]> {
-		// Search for tax-related propositions (propositioner) and SOU reports
+		// Broader search terms for tax-related propositions and SOU reports
+		const searchTerms = [
+			"skatt",
+			"inkomstskatt",
+			"mervärdesskatt",
+			"fastighetsskatt",
+			"arbetsgivaravgifter",
+			"kapitalvinst",
+		].join("+");
+
 		const searchUrl =
-			`${BASE_URL}/dokumentlista/?sok=skatt+inkomstskatt+mervärdesskatt` +
+			`${BASE_URL}/dokumentlista/?sok=${searchTerms}` +
 			`&doktyp=prop,sou&sort=datum&sortorder=desc&utformat=json&sz=${limit}`;
 
 		const response = await this.fetchWithRetry(searchUrl);
@@ -146,12 +165,11 @@ export class RiksdagenClient extends BaseScraper {
 }
 
 function stripHtml(html: string): string {
-	return html
-		.replace(/<[^>]*>/g, " ")
-		.replace(/&nbsp;/g, " ")
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/\s+/g, " ")
-		.trim();
+	const $ = cheerio.load(html);
+
+	// Remove non-content elements
+	$("script, style, nav, footer, header, noscript").remove();
+
+	// Get clean text
+	return $("body").text().replace(/\s+/g, " ").trim();
 }

@@ -15,12 +15,14 @@ export interface ScraperOptions {
 	rateLimit: number; // ms between requests
 	maxRetries: number;
 	limit?: number;
+	timeout?: number; // ms per request, default 30000
 }
 
 const defaultOptions: ScraperOptions = {
 	outputDir: "data/raw",
 	rateLimit: 2000,
 	maxRetries: 3,
+	timeout: 30000,
 };
 
 export abstract class BaseScraper {
@@ -40,24 +42,34 @@ export abstract class BaseScraper {
 
 	protected async fetchWithRetry(url: string, init?: RequestInit): Promise<Response> {
 		let lastError: Error | undefined;
+		const timeout = this.options.timeout ?? 30000;
 
 		for (let attempt = 1; attempt <= this.options.maxRetries; attempt++) {
 			try {
 				await this.sleep(this.options.rateLimit);
-				const response = await fetch(url, {
-					...init,
-					headers: {
-						"User-Agent":
-							"SkatteAssistenten/0.1 (Swedish Tax Research; academic/research use)",
-						...init?.headers,
-					},
-				});
 
-				if (!response.ok) {
-					throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+				const controller = new AbortController();
+				const timer = setTimeout(() => controller.abort(), timeout);
+
+				try {
+					const response = await fetch(url, {
+						...init,
+						signal: controller.signal,
+						headers: {
+							"User-Agent":
+								"SkatteAssistenten/0.1 (Swedish Tax Research; academic/research use)",
+							...init?.headers,
+						},
+					});
+
+					if (!response.ok) {
+						throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+					}
+
+					return response;
+				} finally {
+					clearTimeout(timer);
 				}
-
-				return response;
 			} catch (error) {
 				lastError = error instanceof Error ? error : new Error(String(error));
 				this.logger.warn(
@@ -72,6 +84,29 @@ export abstract class BaseScraper {
 		}
 
 		throw lastError;
+	}
+
+	protected async healthCheck(url: string, timeoutMs = 5000): Promise<boolean> {
+		try {
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+			try {
+				const response = await fetch(url, {
+					method: "HEAD",
+					signal: controller.signal,
+					headers: {
+						"User-Agent":
+							"SkatteAssistenten/0.1 (Swedish Tax Research; academic/research use)",
+					},
+				});
+				return response.ok || response.status < 500;
+			} finally {
+				clearTimeout(timer);
+			}
+		} catch {
+			return false;
+		}
 	}
 
 	protected async saveFile(filename: string, data: Buffer | string): Promise<string> {

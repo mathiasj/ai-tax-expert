@@ -16,6 +16,7 @@ export class LagrummetClient extends BaseScraper {
 		super("lagrummet", {
 			outputDir: "data/raw/lagrummet",
 			rateLimit: 3000,
+			timeout: 10000,
 			...options,
 		});
 	}
@@ -23,6 +24,16 @@ export class LagrummetClient extends BaseScraper {
 	async scrape(): Promise<ScrapedDocument[]> {
 		const documents: ScrapedDocument[] = [];
 		const limit = this.options.limit ?? 50;
+
+		this.logger.info("Checking Lagrummet API availability...");
+
+		const reachable = await this.healthCheck(BASE_URL, 5000);
+		if (!reachable) {
+			this.logger.warn(
+				"Lagrummet API is unreachable at data.lagrummet.se — API may be temporarily down. Try again later.",
+			);
+			return [];
+		}
 
 		this.logger.info("Fetching HFD tax cases from Lagrummet");
 
@@ -54,17 +65,30 @@ export class LagrummetClient extends BaseScraper {
 			headers: { Accept: "application/json" },
 		});
 
-		const data = await response.json();
-		const entries: LagrummetEntry[] = [];
+		let data: unknown;
+		try {
+			data = await response.json();
+		} catch {
+			const text = await response.text().catch(() => "(unreadable)");
+			this.logger.error(
+				{ responsePreview: text.slice(0, 200) },
+				"Failed to parse Lagrummet JSON response",
+			);
+			return [];
+		}
 
-		const items = Array.isArray(data) ? data : data?.items ?? data?.entry ?? [];
+		const entries: LagrummetEntry[] = [];
+		const obj = data as Record<string, unknown>;
+		const items = Array.isArray(data) ? data : (obj?.items ?? obj?.entry ?? []) as unknown[];
+
 		for (const item of items) {
+			const rec = item as Record<string, unknown>;
 			entries.push({
-				id: item.id ?? item["@id"] ?? "",
-				title: item.title ?? item.label ?? "Untitled",
-				url: item.url ?? item.link ?? item["@id"] ?? "",
-				published: item.published ?? item.issued ?? "",
-				type: item.type ?? "case",
+				id: String(rec.id ?? rec["@id"] ?? ""),
+				title: String(rec.title ?? rec.label ?? "Untitled"),
+				url: String(rec.url ?? rec.link ?? rec["@id"] ?? ""),
+				published: String(rec.published ?? rec.issued ?? ""),
+				type: String(rec.type ?? "case"),
 			});
 		}
 

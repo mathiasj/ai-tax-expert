@@ -15,7 +15,7 @@ export function RegisterPage() {
 		);
 	}
 
-	if (user) return <Navigate to="/" replace />;
+	if (user) return <Navigate to="/chat" replace />;
 
 	return (
 		<div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 dark:bg-gray-950">
