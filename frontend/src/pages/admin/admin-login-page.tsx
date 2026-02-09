@@ -1,0 +1,108 @@
+import { type FormEvent, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import { useAuthContext } from "@/contexts/auth-context";
+import { api } from "@/lib/api-client";
+import { setToken } from "@/lib/auth";
+import type { AuthResponse } from "@/types/api";
+
+export function AdminLoginPage() {
+	const { user, setUser, isLoading: authLoading } = useAuthContext();
+	const [email, setEmail] = useState("");
+	const [password, setPassword] = useState("");
+	const [error, setError] = useState<string | null>(null);
+	const [isLoading, setIsLoading] = useState(false);
+
+	if (authLoading) {
+		return (
+			<div className="flex h-screen items-center justify-center">
+				<Spinner size="lg" />
+			</div>
+		);
+	}
+
+	// Already logged in as admin — go to dashboard
+	if (user?.role === "admin") {
+		return <Navigate to="/admin" replace />;
+	}
+
+	async function handleSubmit(e: FormEvent) {
+		e.preventDefault();
+		setError(null);
+		setIsLoading(true);
+		try {
+			const res = await api.post<AuthResponse>("/api/auth/login", { email, password });
+			if (res.user.role !== "admin") {
+				setError("Kontot har inte administratörsbehörighet");
+				return;
+			}
+			setToken(res.token);
+			setUser(res.user);
+			// Navigate handled by the redirect above on re-render
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Inloggningen misslyckades");
+		} finally {
+			setIsLoading(false);
+		}
+	}
+
+	return (
+		<div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 dark:bg-gray-950">
+			<div className="w-full max-w-sm">
+				<div className="mb-8 text-center">
+					<div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-600 text-xl font-bold text-white">
+						A
+					</div>
+					<h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+						Admin
+					</h1>
+					<p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						SkatteAssistenten — Administration
+					</p>
+				</div>
+				<Card>
+					<form onSubmit={handleSubmit} className="space-y-4">
+						{import.meta.env.DEV && (
+							<button
+								type="button"
+								onClick={() => {
+									setEmail("admin@example.se");
+									setPassword("admin123");
+								}}
+								className="w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900"
+							>
+								Dev-läge: Klicka för att fylla i admin-uppgifter
+							</button>
+						)}
+						<Input
+							id="admin-email"
+							label="E-post"
+							type="email"
+							value={email}
+							onChange={(e) => setEmail(e.target.value)}
+							placeholder="admin@example.se"
+							required
+							autoComplete="email"
+						/>
+						<Input
+							id="admin-password"
+							label="Lösenord"
+							type="password"
+							value={password}
+							onChange={(e) => setPassword(e.target.value)}
+							required
+							autoComplete="current-password"
+						/>
+						{error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+						<Button type="submit" className="w-full" isLoading={isLoading}>
+							Logga in
+						</Button>
+					</form>
+				</Card>
+			</div>
+		</div>
+	);
+}

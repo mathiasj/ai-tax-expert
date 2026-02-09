@@ -1,14 +1,21 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuthContext } from "@/contexts/auth-context";
+import { removeToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { ToastContainer } from "@/components/ui/toast";
 import { AdminSidebar } from "./admin-sidebar";
 
 export function AdminLayout() {
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const { logout } = useAuth();
+	const { setUser } = useAuthContext();
 	const navigate = useNavigate();
+
+	const logout = useCallback(() => {
+		removeToken();
+		setUser(null);
+		navigate("/admin/login");
+	}, [navigate, setUser]);
 
 	return (
 		<div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">

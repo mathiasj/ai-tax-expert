@@ -14,12 +14,8 @@ export function AdminRoute({ children }: { children: ReactNode }) {
 		);
 	}
 
-	if (!user) {
-		return <Navigate to="/login" replace />;
-	}
-
-	if (user.role !== "admin") {
-		return <Navigate to="/chat" replace />;
+	if (!user || user.role !== "admin") {
+		return <Navigate to="/admin/login" replace />;
 	}
 
 	return <>{children}</>;

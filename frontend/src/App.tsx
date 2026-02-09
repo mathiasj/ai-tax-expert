@@ -12,6 +12,7 @@ import { DashboardPage } from "@/pages/dashboard-page";
 import { DocumentsPage } from "@/pages/documents-page";
 import { EvaluationPage } from "@/pages/evaluation-page";
 import { SettingsPage } from "@/pages/settings-page";
+import { AdminLoginPage } from "@/pages/admin/admin-login-page";
 import { AdminOverviewPage } from "@/pages/admin/admin-overview-page";
 import { AdminDocumentsPage } from "@/pages/admin/admin-documents-page";
 import { AdminSourcesPage } from "@/pages/admin/admin-sources-page";
@@ -43,6 +44,7 @@ export function App() {
 					</Route>
 
 					{/* Admin routes */}
+					<Route path="/admin/login" element={<AdminLoginPage />} />
 					<Route
 						element={
 							<AdminRoute>
