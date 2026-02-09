@@ -93,6 +93,11 @@ export interface CollectionInfo {
 
 export async function getCollectionInfo(): Promise<CollectionInfo> {
 	const client = getClient();
+	const collections = await client.getCollections();
+	const exists = collections.collections.some((c) => c.name === env.QDRANT_COLLECTION);
+	if (!exists) {
+		return { pointsCount: 0, vectorsCount: 0, status: "not_created", segmentsCount: 0 };
+	}
 	const info = await client.getCollection(env.QDRANT_COLLECTION);
 	return {
 		pointsCount: info.points_count ?? 0,
