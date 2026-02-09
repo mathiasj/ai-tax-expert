@@ -256,7 +256,7 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 - Lagrummet API (`data.lagrummet.se`) is intermittently unreachable — scraper fast-fails with warning
 - `bun.lock` (not `bun.lockb`) is the lockfile format for Bun 1.3.9
 - PATH must include `$HOME/.bun/bin` explicitly when running from scripts
-- Port 3000 and 5000 often occupied on macOS — use `PORT=4000` as alternative
+- Port 3000 and 5000 often occupied on macOS — use `BACKEND_API_PORT=4000` as alternative
 - Vite 6 required (not v7) — Node 20.9.0 lacks `crypto.hash` needed by Vite 7
 - `@types/react` must be v18.x to match React 18 (not v19)
 - Frontend stub pages (documents, evaluation) need backend endpoints: `GET /api/documents`, `GET /api/eval/results/latest`, `PATCH /api/auth/me`

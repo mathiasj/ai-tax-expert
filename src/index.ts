@@ -5,6 +5,7 @@ import { serveStatic } from "hono/bun";
 import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import pino from "pino";
+import { env } from "./config/env.js";
 import { optionalAuth } from "./api/middleware/auth.js";
 import { errorHandler } from "./api/middleware/error-handler.js";
 import { rateLimiter } from "./api/middleware/rate-limiter.js";
@@ -62,7 +63,7 @@ if (hasDistDir) {
 	});
 }
 
-const port = Number.parseInt(process.env.PORT ?? "3000", 10);
+const port = env.BACKEND_API_PORT;
 
 // Seed test user in development mode
 if (process.env.NODE_ENV !== "production") {

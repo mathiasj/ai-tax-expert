@@ -23,7 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			return;
 		}
 
-		api.get<{ user: UserInfo }>("/api/auth/me")
+		api.get<{ user: UserInfo }>("/api/auth/me", { skipAuthRedirect: true })
 			.then((res) => setUser(res.user))
 			.catch(() => removeToken())
 			.finally(() => setIsLoading(false));

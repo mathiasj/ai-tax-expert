@@ -8,17 +8,29 @@ const envSchema = z
 		OPENAI_API_KEY: z.string().min(1, "OPENAI_API_KEY is required"),
 		COHERE_API_KEY: z.string().min(1, "COHERE_API_KEY is required"),
 
-		QDRANT_URL: z.string().url().default("http://localhost:6333"),
+		// Qdrant — individual components
+		QDRANT_HOST: z.string().default("localhost"),
+		QDRANT_DB_PORT: z.coerce.number().default(6333),
+		QDRANT_GRPC_PORT: z.coerce.number().default(6334),
 		QDRANT_COLLECTION: z.string().default("tax_documents"),
+		QDRANT_URL: z.string().url().optional(),
 
-		DATABASE_URL: z
-			.string()
-			.url()
-			.default("postgresql://postgres:postgres@localhost:5432/tax_expert"),
+		// PostgreSQL — individual components
+		POSTGRES_HOST: z.string().default("localhost"),
+		POSTGRES_USER: z.string().default("postgres"),
+		POSTGRES_PASSWORD: z.string().default("postgres"),
+		POSTGRES_DB_NAME: z.string().default("tax_expert"),
+		POSTGRES_DB_PORT: z.coerce.number().default(5432),
+		DATABASE_URL: z.string().url().optional(),
 
-		REDIS_URL: z.string().url().default("redis://localhost:6379"),
+		// Redis — individual components
+		REDIS_HOST: z.string().default("localhost"),
+		REDIS_CACHE_PORT: z.coerce.number().default(6379),
+		REDIS_URL: z.string().url().optional(),
 
-		PORT: z.coerce.number().default(3000),
+		// Server
+		BACKEND_API_PORT: z.coerce.number().default(3050),
+		APP_FRONTEND_PORT: z.coerce.number().default(5100),
 		NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 		LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 
@@ -56,7 +68,13 @@ const envSchema = z
 		},
 	);
 
-export type Env = z.output<typeof envSchema>;
+type ParsedEnv = z.output<typeof envSchema>;
+
+export type Env = ParsedEnv & {
+	DATABASE_URL: string;
+	REDIS_URL: string;
+	QDRANT_URL: string;
+};
 
 function loadEnv(): Env {
 	const result = envSchema.safeParse(process.env);
@@ -65,7 +83,25 @@ function loadEnv(): Env {
 		console.error("Invalid environment variables:", formatted);
 		throw new Error("Invalid environment configuration");
 	}
-	return result.data;
+
+	const parsed = result.data;
+
+	const DATABASE_URL =
+		parsed.DATABASE_URL ??
+		`postgresql://${parsed.POSTGRES_USER}:${parsed.POSTGRES_PASSWORD}@${parsed.POSTGRES_HOST}:${parsed.POSTGRES_DB_PORT}/${parsed.POSTGRES_DB_NAME}`;
+
+	const REDIS_URL =
+		parsed.REDIS_URL ?? `redis://${parsed.REDIS_HOST}:${parsed.REDIS_CACHE_PORT}`;
+
+	const QDRANT_URL =
+		parsed.QDRANT_URL ?? `http://${parsed.QDRANT_HOST}:${parsed.QDRANT_DB_PORT}`;
+
+	return {
+		...parsed,
+		DATABASE_URL,
+		REDIS_URL,
+		QDRANT_URL,
+	};
 }
 
 export const env = loadEnv();

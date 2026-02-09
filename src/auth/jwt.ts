@@ -26,6 +26,6 @@ export async function signToken(payload: Omit<JWTPayload, "exp">): Promise<strin
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload> {
-	const payload = await verify(token, env.JWT_SECRET);
+	const payload = await verify(token, env.JWT_SECRET, "HS256");
 	return payload as unknown as JWTPayload;
 }
