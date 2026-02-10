@@ -12,6 +12,7 @@ export const docTypeEnum = pgEnum("doc_type", [
 	"handledning",
 	"proposition",
 	"sou",
+	"lagtext",
 	"rattsfallsnotis",
 	"rattsfallsreferat",
 	"ovrigt",

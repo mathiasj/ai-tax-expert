@@ -53,6 +53,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 	handledning: "Handledning",
 	proposition: "Proposition",
 	sou: "SOU",
+	lagtext: "Lagtext (SFS)",
 	rattsfallsnotis: "Rättsfallsnotis",
 	rattsfallsreferat: "Rättsfallsreferat",
 	ovrigt: "Övrigt",

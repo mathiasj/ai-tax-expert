@@ -8,6 +8,7 @@ export type DocType =
 	| "handledning"
 	| "proposition"
 	| "sou"
+	| "lagtext"
 	| "rattsfallsnotis"
 	| "rattsfallsreferat"
 	| "ovrigt";
@@ -36,6 +37,7 @@ export function classifyDocType(
 		const doktyp = String(metadata.doktyp ?? metadata.docType ?? "").toLowerCase();
 		if (doktyp === "prop") return "proposition";
 		if (doktyp === "sou") return "sou";
+		if (doktyp === "sfs") return "lagtext";
 		return "ovrigt";
 	}
 

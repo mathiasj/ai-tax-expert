@@ -1,0 +1,1 @@
+ALTER TYPE "public"."doc_type" ADD VALUE 'lagtext' BEFORE 'rattsfallsnotis';

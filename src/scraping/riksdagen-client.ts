@@ -27,52 +27,85 @@ export class RiksdagenClient extends BaseScraper {
 		const documents: ScrapedDocument[] = [];
 		const limit = this.options.limit ?? 50;
 
+		// Fetch propositions + SOU
 		this.logger.info("Fetching tax-related propositions from Riksdagen");
-
 		try {
 			const results = await this.searchTaxPropositions(limit);
-
-			for (const item of results) {
-				// Dedup: skip if file already exists on disk
-				const txtPath = `${this.options.outputDir}/${item.doktyp}_${item.dok_id}.txt`;
-				const pdfPath = `${this.options.outputDir}/${item.doktyp}_${item.dok_id}.pdf`;
-				if (existsSync(txtPath) || existsSync(pdfPath)) {
-					this.logger.info({ id: item.dok_id }, "Skipping already-scraped document");
-					continue;
-				}
-
-				try {
-					const doc = await this.fetchProposition(item);
-					documents.push(doc);
-					this.logger.info({ title: doc.title, total: documents.length }, "Fetched document");
-				} catch (error) {
-					this.logger.error({ id: item.dok_id, error }, "Failed to fetch proposition");
-				}
-			}
+			await this.fetchResults(results, documents);
 		} catch (error) {
 			this.logger.error({ error }, "Failed to search propositions");
+		}
+
+		// Fetch SFS (gällande lagtext)
+		this.logger.info("Fetching tax-related SFS (lagtext) from Riksdagen");
+		try {
+			const results = await this.searchTaxLaws(limit);
+			await this.fetchResults(results, documents);
+		} catch (error) {
+			this.logger.error({ error }, "Failed to search SFS");
 		}
 
 		this.logger.info({ total: documents.length }, "Riksdagen scraping complete");
 		return documents;
 	}
 
+	private async fetchResults(results: RiksdagenDocument[], documents: ScrapedDocument[]): Promise<void> {
+		for (const item of results) {
+			const txtPath = `${this.options.outputDir}/${item.doktyp}_${item.dok_id}.txt`;
+			const pdfPath = `${this.options.outputDir}/${item.doktyp}_${item.dok_id}.pdf`;
+			if (existsSync(txtPath) || existsSync(pdfPath)) {
+				this.logger.info({ id: item.dok_id }, "Skipping already-scraped document");
+				continue;
+			}
+
+			try {
+				const doc = await this.fetchDocument(item);
+				documents.push(doc);
+				this.logger.info({ title: doc.title, total: documents.length }, "Fetched document");
+			} catch (error) {
+				this.logger.error({ id: item.dok_id, error }, "Failed to fetch document");
+			}
+		}
+	}
+
 	private async searchTaxPropositions(limit: number): Promise<RiksdagenDocument[]> {
-		// Broader search terms for tax-related propositions and SOU reports
-		const searchTerms = [
-			"skatt",
-			"inkomstskatt",
-			"mervärdesskatt",
-			"fastighetsskatt",
-			"arbetsgivaravgifter",
-			"kapitalvinst",
-		].join("+");
+		return this.searchDocuments({
+			sok: "skatt",
+			doktyp: "prop,sou",
+			sort: "datum",
+			sortorder: "desc",
+			limit,
+		});
+	}
 
-		const searchUrl =
-			`${BASE_URL}/dokumentlista/?sok=${searchTerms}` +
-			`&doktyp=prop,sou&sort=datum&sortorder=desc&utformat=json&sz=${limit}`;
+	private async searchTaxLaws(limit: number): Promise<RiksdagenDocument[]> {
+		return this.searchDocuments({
+			sok: "skatt",
+			doktyp: "sfs",
+			dokstat: "gällande sfs",
+			sort: "rel",
+			limit,
+		});
+	}
 
-		const response = await this.fetchWithRetry(searchUrl);
+	private async searchDocuments(params: {
+		sok: string;
+		doktyp: string;
+		dokstat?: string;
+		sort: string;
+		sortorder?: string;
+		limit: number;
+	}): Promise<RiksdagenDocument[]> {
+		const url = new URL(`${BASE_URL}/dokumentlista/`);
+		url.searchParams.set("sok", params.sok);
+		url.searchParams.set("doktyp", params.doktyp);
+		if (params.dokstat) url.searchParams.set("dokstat", params.dokstat);
+		url.searchParams.set("sort", params.sort);
+		if (params.sortorder) url.searchParams.set("sortorder", params.sortorder);
+		url.searchParams.set("utformat", "json");
+		url.searchParams.set("sz", String(params.limit));
+
+		const response = await this.fetchWithRetry(url.toString());
 		const data = await response.json();
 
 		const docs = data?.dokumentlista?.dokument ?? [];
@@ -88,7 +121,7 @@ export class RiksdagenClient extends BaseScraper {
 		);
 	}
 
-	private async fetchProposition(item: RiksdagenDocument): Promise<ScrapedDocument> {
+	private async fetchDocument(item: RiksdagenDocument): Promise<ScrapedDocument> {
 		// Try to get HTML version first via the document content API
 		const htmlUrl = `${BASE_URL}/dokument/${item.dok_id}/json`;
 
@@ -104,6 +137,7 @@ export class RiksdagenClient extends BaseScraper {
 				const sourceUrl = `https://www.riksdagen.se/sv/dokument-och-lagar/${item.dok_id}/`;
 				const docType = item.doktyp.toLowerCase() === "prop" ? "proposition"
 					: item.doktyp.toLowerCase() === "sou" ? "sou"
+					: item.doktyp.toLowerCase() === "sfs" ? "lagtext"
 					: "ovrigt";
 				await this.saveMetadata(filePath, {
 					title: item.titel,
