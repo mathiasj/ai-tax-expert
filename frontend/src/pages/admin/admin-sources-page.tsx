@@ -1,14 +1,13 @@
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
+import { DropdownItem, DropdownMenu } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { useCreateSource, useDeleteSource, useSources, useTriggerScrape } from "@/hooks/use-admin";
-import { api } from "@/lib/api-client";
 import { formatDate } from "@/lib/utils";
 
 const PAGE_SIZE = 30;
@@ -19,19 +18,6 @@ const sourceTypeOptions = [
 	{ value: "riksdagen", label: "Riksdagen" },
 	{ value: "manual", label: "Manual" },
 ];
-
-const statusOptions = [
-	{ value: "active", label: "Aktiv" },
-	{ value: "paused", label: "Pausad" },
-	{ value: "failed", label: "Misslyckad" },
-];
-
-function statusVariant(status: string): "success" | "danger" | "warning" | "default" {
-	if (status === "active") return "success";
-	if (status === "failed") return "danger";
-	if (status === "paused") return "warning";
-	return "default";
-}
 
 export function AdminSourcesPage() {
 	const [page, setPage] = useState(1);
@@ -48,7 +34,18 @@ export function AdminSourcesPage() {
 
 	const { create, isLoading: creating } = useCreateSource();
 	const { deleteSource, isLoading: deleting } = useDeleteSource();
-	const { trigger: triggerScrape, isLoading: scraping } = useTriggerScrape();
+	const { trigger: triggerScrape } = useTriggerScrape();
+	const [scrapingSource, setScrapingSource] = useState<string | null>(null);
+	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+	// Auto-refresh while scraping
+	useEffect(() => {
+		if (scrapingSource) {
+			pollRef.current = setInterval(refetch, 5000);
+			return () => { if (pollRef.current) clearInterval(pollRef.current); };
+		}
+		if (pollRef.current) clearInterval(pollRef.current);
+	}, [scrapingSource, refetch]);
 
 	const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
@@ -76,15 +73,14 @@ export function AdminSourcesPage() {
 	};
 
 	const handleScrape = async (source: string) => {
+		setScrapingSource(source);
 		const ok = await triggerScrape(source);
 		if (ok) {
 			setTimeout(refetch, 2000);
+			setTimeout(() => setScrapingSource(null), 5 * 60 * 1000);
+		} else {
+			setScrapingSource(null);
 		}
-	};
-
-	const handleStatusChange = async (id: string, status: string) => {
-		await api.patch(`/api/admin/sources/${id}`, { status });
-		refetch();
 	};
 
 	return (
@@ -105,13 +101,12 @@ export function AdminSourcesPage() {
 					<table className="w-full text-left text-sm">
 						<thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
 							<tr>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">URL</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Typ</th>
 								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Etikett</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Status</th>
+								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Typ</th>
+								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">URL</th>
 								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Dokument</th>
 								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Senast scrapad</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Åtgärder</th>
+								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400" />
 							</tr>
 						</thead>
 						<tbody>
@@ -120,51 +115,47 @@ export function AdminSourcesPage() {
 									key={src.id}
 									className="border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/30"
 								>
-									<td className="max-w-xs truncate px-4 py-3 text-gray-900 dark:text-gray-100">
-										{src.url}
+									<td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
+										{src.label ?? "-"}
 									</td>
 									<td className="px-4 py-3 text-gray-600 dark:text-gray-400">{src.source}</td>
-									<td className="px-4 py-3 text-gray-600 dark:text-gray-400">{src.label ?? "-"}</td>
-									<td className="px-4 py-3">
-										<Badge variant={statusVariant(src.status)}>{src.status}</Badge>
+									<td className="max-w-xs truncate px-4 py-3 text-gray-500 dark:text-gray-400">
+										{src.url}
 									</td>
 									<td className="px-4 py-3 text-gray-600 dark:text-gray-400">{src.documentCount}</td>
 									<td className="whitespace-nowrap px-4 py-3 text-gray-500 dark:text-gray-400">
-										{src.lastScrapedAt ? formatDate(src.lastScrapedAt) : "-"}
+										{scrapingSource === src.source ? (
+											<span className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+												<Spinner size="sm" />
+												Skrapar...
+											</span>
+										) : (
+											src.lastScrapedAt ? formatDate(src.lastScrapedAt) : "-"
+										)}
 									</td>
-									<td className="px-4 py-3">
-										<div className="flex gap-1">
-											<Select
-												options={statusOptions}
-												value={src.status}
-												onChange={(e) => handleStatusChange(src.id, e.target.value)}
-												className="w-24 !py-1 text-xs"
-											/>
+									<td className="px-4 py-3 text-right">
+										<DropdownMenu>
 											{src.source !== "manual" && (
-												<Button
-													variant="secondary"
-													size="sm"
+												<DropdownItem
 													onClick={() => handleScrape(src.source)}
-													disabled={scraping}
+													disabled={!!scrapingSource}
 												>
 													Skrapa
-												</Button>
+												</DropdownItem>
 											)}
-											<Button
-												variant="ghost"
-												size="sm"
+											<DropdownItem
+												variant="danger"
 												onClick={() => setDeleteId(src.id)}
-												className="text-red-600 dark:text-red-400"
 											>
 												Ta bort
-											</Button>
-										</div>
+											</DropdownItem>
+										</DropdownMenu>
 									</td>
 								</tr>
 							))}
 							{data?.sources.length === 0 && (
 								<tr>
-									<td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+									<td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
 										Inga källor hittades
 									</td>
 								</tr>

@@ -209,13 +209,13 @@ admin.get("/sources", async (c) => {
 		db.select({ count: count() }).from(sources).where(where),
 	]);
 
-	// Get document counts per source URL
+	// Get document counts per source name (skatteverket, riksdagen, etc.)
 	const enriched = await Promise.all(
 		rows.map(async (s) => {
 			const [docCount] = await db
 				.select({ count: count() })
 				.from(documents)
-				.where(eq(documents.sourceUrl, s.url));
+				.where(eq(documents.source, s.source));
 			return { ...s, documentCount: docCount.count };
 		}),
 	);
