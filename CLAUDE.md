@@ -30,7 +30,7 @@ src/
 ├── db/client.ts           # Drizzle PostgreSQL client
 ├── db/seed.ts             # Dev seed: test@example.se + admin@example.se
 ├── scraping/
-│   ├── base-scraper.ts    # Abstract base with rate limiting, retry, .meta.json sidecar
+│   ├── base-scraper.ts    # Abstract base with rate limiting, retry, .meta.json sidecar, onDocument callback
 │   ├── skatteverket-scraper.ts
 │   ├── lagrummet-client.ts
 │   └── riksdagen-client.ts
@@ -61,12 +61,13 @@ src/
 │   ├── conversation.ts    # Create conversation, fetch history (last 5 turns)
 │   ├── fallbacks.ts       # Swedish-language fallback responses
 │   └── evaluation/
-│       ├── types.ts              # Eval types (EvaluationSummary, etc.)
+│       ├── types.ts              # Eval types (EvaluationSummary, EvalCategory, etc.)
 │       ├── test-questions.ts     # 17 Swedish tax test questions
+│       ├── faq-questions.ts      # 25 Skatteverket FAQ-based eval questions with reference answers
 │       ├── relevance-scorer.ts   # LLM-based chunk relevance scoring
 │       ├── faithfulness-checker.ts # LLM-based answer grounding check
 │       ├── metrics.ts            # Citation accuracy, keyword coverage, precision
-│       └── runner.ts             # Eval orchestrator + CLI entry point
+│       └── runner.ts             # Eval orchestrator + CLI entry point (--faq, --all flags)
 ├── auth/
 │   ├── jwt.ts             # sign/verify JWT (Hono JWT, HS256)
 │   └── password.ts        # Bun.password argon2id hash/verify
@@ -150,7 +151,7 @@ bun run process        # Import raw documents from disk → create DB records �
 bun run worker         # Start BullMQ document processing worker
 bun run refresh-worker # Start refresh scheduler (checks for stale documents daily at 03:00)
 bun run scrape-worker  # Start scrape scheduler (scrapes sources weekly Monday 04:00)
-bun run eval           # Run RAG evaluation suite (17 test questions)
+bun run eval           # Run RAG evaluation suite (17 test questions; --faq for 25 FAQ questions, --all for both)
 bun run db:generate    # Generate Drizzle migrations
 bun run db:migrate     # Run Drizzle migrations
 bun run lint           # Biome check
@@ -165,17 +166,17 @@ docker compose -f docker-compose.prod.yml up -d  # Start all services (prod)
 - **Scrapers**: Extend `BaseScraper` — automatic rate limiting (2-3s), retry (3x), request timeout (30s default), health check, `.meta.json` sidecar files for title/source/URL metadata
 - **Skatteverket scraper**: Uses Firecrawl API to bypass F5 WAF on `www4.skatteverket.se`. Scrapes ställningstaganden (2500+) and handledningar from `/rattsligvagledning/`. Requires `FIRECRAWL_API_KEY` env var.
 - **Lagrummet scraper**: Fast-fails with warning when API is unreachable (data.lagrummet.se is intermittently down)
-- **Riksdagen scraper**: Deduplicates against existing files on disk, Cheerio-based HTML stripping
+- **Riksdagen scraper**: Fetches propositions/SOU + gällande SFS (lagtext) via multiple tax-related search terms (skatt, avgift, avdrag, tull, taxering). Deduplicates by dok_id and against files on disk. Cheerio-based HTML stripping
 - **Chunking**: Swedish legal separators: `§`, `Kap.`, `Kapitel`, `Avdelning`, `Avsnitt`
 - **Embedding**: Batched (100/batch), OpenAI text-embedding-3-large at 1536 dimensions
-- **Metadata classification**: Auto-classify `docType` (ställningstagande, handledning, proposition, etc.), `audience` (allmän, företag, specialist), `taxArea` (inkomstskatt, moms, etc.) via `src/processing/classifier.ts`
+- **Metadata classification**: Auto-classify `docType` (ställningstagande, handledning, proposition, sou, lagtext, etc.), `audience` (allmän, företag, specialist), `taxArea` (inkomstskatt, moms, etc.) via `src/processing/classifier.ts`
 - **Indexing**: Qdrant upsert in batches of 100, cosine distance, metadata filter support (source, documentId, docType, audience, taxArea)
 - **RAG pipeline**: retrieve (top-K=20) → rerank (Cohere, top-N=5) → assemble (dedup, token budget=6000) → generate (LLM with Swedish tax system prompt + source hierarchy) → cite sources as [Källa N: Dokumenttyp - Titel]
-- **Source hierarchy**: System prompt instructs LLM to prioritize: lagtext > rättsfall > ställningstaganden > handledningar
+- **Source hierarchy**: System prompt instructs LLM to prioritize: lagtext (SFS) > propositioner/SOU > rättsfall > ställningstaganden > handledningar
 - **LLM providers**: Factory pattern with cached singleton; switch via `LLM_PROVIDER=openai|anthropic`
-- **Worker pipeline**: download → parse → classify → chunk → embed → index (BullMQ, concurrency 2); computes SHA-256 contentHash for change detection
+- **Worker pipeline**: parse → classify → chunk → embed → index (BullMQ, concurrency 2); files are already on disk when worker starts; computes SHA-256 contentHash for change detection
 - **Refresh scheduler**: BullMQ repeatable job (daily 03:00) checks documents with `refreshPolicy != "once"` and stale `lastCheckedAt`; re-queues for processing; skips unchanged content via hash comparison
-- **Scrape scheduler**: BullMQ `scrape-jobs` queue (concurrency 1); weekly cron (default Monday 04:00 via `SCRAPE_SCHEDULE_CRON`); health check → scrape → create DB records → queue document-processing jobs → update `sources.lastScrapedAt`; admin API trigger + status; configurable via `SCRAPE_SCHEDULE_ENABLED`, `SCRAPE_DEFAULT_LIMIT`
+- **Scrape scheduler**: BullMQ `scrape-jobs` queue (concurrency 1); weekly cron (default Monday 04:00 via `SCRAPE_SCHEDULE_CRON`); health check → scrape with `onDocument` callback (creates DB record + queues processing immediately per document) → update `sources.lastScrapedAt`; admin API trigger + status; configurable via `SCRAPE_SCHEDULE_ENABLED`, `SCRAPE_DEFAULT_LIMIT`
 - **Graceful shutdown**: `SIGTERM`/`SIGINT` handlers in `src/index.ts` close all BullMQ queues + Redis connection before exit
 - **Auth**: JWT (Hono HS256) + Bun.password (argon2id); `optionalAuth` on all `/api/*`, `requireAuth` on analytics, `requireAdmin` on `/api/admin/*`
 - **Admin**: Separate admin section (`/admin/*`) with own layout, sidebar, and route guard; admin seed user `admin@example.se`/`admin123`; BullMQ queue shared via `src/workers/queue.ts`
@@ -260,9 +261,9 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 
 | Source | What | Format |
 |--------|------|--------|
-| Skatteverket | Tax guidance from www.skatteverket.se (skatter, deklaration, fastigheter) | HTML via Playwright |
+| Skatteverket | Tax guidance from www.skatteverket.se (skatter, deklaration, fastigheter) | HTML via Firecrawl |
 | Lagrummet | HFD tax court cases | JSON/Atom feed, PDF |
-| Riksdagen | Tax propositions (prop), SOU reports | JSON API, HTML |
+| Riksdagen | Tax propositions (prop), SOU reports, gällande SFS lagtext | JSON API, HTML |
 
 ## Current Status
 
@@ -273,7 +274,8 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 **Phase 5: COMPLETE** — Admin dashboard: separate admin layout/sidebar/routes (`/admin/*`), documents CRUD (search/filter/detail drawer/delete/reprocess/mark superseded), sources CRUD (add/edit status/delete URLs), queries browser (feedback filter, expandable answers, feedback stats), system health monitoring (Qdrant/Redis/PG/BullMQ auto-refresh), user feedback (thumbs up/down in chat, stored per query), `requireAdmin` middleware, admin seed user, `sources` table, superseded/feedback fields on documents/queries
 **Phase 7: COMPLETE** — Metadata-enriched pipeline: `docType`/`audience`/`taxArea` enums + columns on documents table, auto-classification via `classifier.ts`, scrapers emit structured metadata, worker passes rich metadata to Qdrant, context assembler shows Swedish docType labels, system prompt with source hierarchy (lagtext > rättsfall > ställningstaganden > handledningar), new Qdrant filters (docType/audience/taxArea), query API supports new filter fields, content hash (SHA-256) for change detection, refresh scheduler (daily cron + manual trigger), admin refresh endpoint + UI
 **Phase 8: COMPLETE** — Production deploy + scheduled scraping: Dockerfile fixed (bun.lock, multi-stage, healthcheck), `.dockerignore`, `docker-compose.prod.yml` (backend/worker/refresh-worker/scrape-worker), graceful shutdown (SIGTERM/SIGINT), BullMQ scrape scheduler (`scrape-jobs` queue, weekly cron, admin trigger/status API), scrape scheduler UI (system health card, per-source scrape button), GitHub Actions CI (lint + Docker build)
-**Phase 9: COMPLETE** — Activity log + pipeline fixes: admin log page (`/admin/log`) with pipeline step visualization (pending→downloading→parsing→chunking→embedding→indexed), auto-refresh every 5s, queue summary cards; scrape scheduler now creates DB records and queues processing jobs after scraping; `bun run process` rewritten to import existing files into DB + queue for worker; shared Docker volume (`raw_data`) for scraped files across containers; Dockerfile `ENTRYPOINT` → `CMD` fix
+**Phase 9: COMPLETE** — Activity log + pipeline fixes: admin log page (`/admin/log`) with pipeline step visualization (pending→parsing→chunking→embedding→indexed), source URL links, pipeline duration display, auto-refresh every 5s, queue summary cards; scrape scheduler streams documents to DB immediately via `onDocument` callback; `bun run process` rewritten to import existing files into DB + queue for worker; shared Docker volume (`raw_data`) for scraped files across containers; Dockerfile `ENTRYPOINT` → `CMD` fix
+**Phase 10: COMPLETE** — SFS lagtext + evaluation: riksdagen scraper extended with gällande SFS documents (multiple search terms: skatt, avgift, avdrag, tull, taxering with dedup), `lagtext` docType added to schema/classifier/context-assembler, source hierarchy updated (lagtext > propositioner > rättsfall > ställningstaganden > handledningar), 25 Skatteverket FAQ-based evaluation questions with reference answers (`bun run eval --faq`), admin dark mode toggle
 
 ## Known Issues
 
@@ -291,6 +293,7 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 
 ## Conventions
 
+- **Documentation maintenance**: CLAUDE.md and README.md must always be reviewed and updated when adding new features, changing architecture, or modifying key patterns. Ensure project status, file structure, API endpoints, commands, and data sources reflect the current state of the codebase. Add new logic and patterns when relevant.
 - Use absolute imports where possible
 - Biome formatting: tabs, double quotes, semicolons, 100 char line width
 - All async errors should be caught and logged with pino
