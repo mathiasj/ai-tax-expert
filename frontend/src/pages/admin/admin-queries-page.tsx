@@ -1,9 +1,15 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Pagination } from "@/components/ui/pagination";
-import { Select } from "@/components/ui/select";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { useAdminQueries, useFeedbackStats } from "@/hooks/use-admin";
 import { formatDate, formatMs } from "@/lib/utils";
@@ -19,7 +25,7 @@ const feedbackOptions = [
 function FeedbackIcon({ rating }: { rating: number | null }) {
 	if (rating === 1) return <span title="Positiv">👍</span>;
 	if (rating === -1) return <span title="Negativ">👎</span>;
-	return <span className="text-gray-400" title="Ingen feedback">—</span>;
+	return <span className="text-muted-foreground" title="Ingen feedback">—</span>;
 }
 
 export function AdminQueriesPage() {
@@ -39,10 +45,11 @@ export function AdminQueriesPage() {
 	const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
 	const handleFilterChange = (value: string) => {
-		setFeedback(value);
+		const newValue = value === "_all" ? "" : value;
+		setFeedback(newValue);
 		setPage(1);
 		const params = new URLSearchParams();
-		if (value) params.set("feedback", value);
+		if (newValue) params.set("feedback", newValue);
 		setSearchParams(params);
 	};
 
@@ -52,30 +59,30 @@ export function AdminQueriesPage() {
 
 	return (
 		<div className="space-y-4 p-6">
-			<h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Frågor</h2>
+			<h2 className="text-xl font-bold text-foreground">Frågor</h2>
 
 			{/* Feedback summary */}
 			{stats && (
 				<div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
 					<Card className="flex flex-col gap-1 p-4">
-						<p className="text-xs text-gray-500 dark:text-gray-400">Totalt</p>
-						<p className="text-xl font-bold text-gray-900 dark:text-gray-100">{stats.total}</p>
+						<p className="text-xs text-muted-foreground">Totalt</p>
+						<p className="text-xl font-bold text-foreground">{stats.total}</p>
 					</Card>
 					<Card className="flex flex-col gap-1 p-4">
-						<p className="text-xs text-gray-500 dark:text-gray-400">Positiv</p>
+						<p className="text-xs text-muted-foreground">Positiv</p>
 						<p className="text-xl font-bold text-green-600 dark:text-green-400">
 							{stats.positive} <span className="text-sm font-normal">({positivePercent}%)</span>
 						</p>
 					</Card>
 					<Card className="flex flex-col gap-1 p-4">
-						<p className="text-xs text-gray-500 dark:text-gray-400">Negativ</p>
+						<p className="text-xs text-muted-foreground">Negativ</p>
 						<p className="text-xl font-bold text-red-600 dark:text-red-400">
 							{stats.negative} <span className="text-sm font-normal">({negativePercent}%)</span>
 						</p>
 					</Card>
 					<Card className="flex flex-col gap-1 p-4">
-						<p className="text-xs text-gray-500 dark:text-gray-400">Utan feedback</p>
-						<p className="text-xl font-bold text-gray-500">
+						<p className="text-xs text-muted-foreground">Utan feedback</p>
+						<p className="text-xl font-bold text-muted-foreground">
 							{stats.noFeedback} <span className="text-sm font-normal">({noFbPercent}%)</span>
 						</p>
 					</Card>
@@ -84,14 +91,19 @@ export function AdminQueriesPage() {
 
 			{/* Filter */}
 			<Card className="flex items-end gap-3 p-4">
-				<div style={{ minWidth: "180px" }}>
-					<Select
-						label="Feedback-filter"
-						options={feedbackOptions}
-						placeholder="Alla"
-						value={feedback}
-						onChange={(e) => handleFilterChange(e.target.value)}
-					/>
+				<div style={{ minWidth: "180px" }} className="space-y-2">
+					<Label>Feedback-filter</Label>
+					<Select value={feedback || "_all"} onValueChange={handleFilterChange}>
+						<SelectTrigger className="w-full">
+							<SelectValue placeholder="Alla" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="_all">Alla</SelectItem>
+							{feedbackOptions.map((opt) => (
+								<SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</div>
 			</Card>
 
@@ -103,12 +115,12 @@ export function AdminQueriesPage() {
 			) : (
 				<Card className="overflow-x-auto p-0">
 					<table className="w-full text-left text-sm">
-						<thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+						<thead className="border-b bg-muted/50">
 							<tr>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Fråga</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Svarstid</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Feedback</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Datum</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Fråga</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Svarstid</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Feedback</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Datum</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -119,36 +131,36 @@ export function AdminQueriesPage() {
 									<>
 										<tr
 											key={q.id}
-											className="cursor-pointer border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/30"
+											className="cursor-pointer border-b border-border hover:bg-muted/50"
 											onClick={() => setExpandedId(isExpanded ? null : q.id)}
 										>
-											<td className="max-w-md truncate px-4 py-3 text-gray-900 dark:text-gray-100">
+											<td className="max-w-md truncate px-4 py-3 text-foreground">
 												{q.question}
 											</td>
-											<td className="whitespace-nowrap px-4 py-3 text-gray-500 dark:text-gray-400">
+											<td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
 												{timings?.totalMs ? formatMs(timings.totalMs) : "-"}
 											</td>
 											<td className="px-4 py-3">
 												<FeedbackIcon rating={q.feedbackRating} />
 											</td>
-											<td className="whitespace-nowrap px-4 py-3 text-gray-500 dark:text-gray-400">
+											<td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
 												{formatDate(q.createdAt)}
 											</td>
 										</tr>
 										{isExpanded && (
 											<tr key={`${q.id}-detail`}>
-												<td colSpan={4} className="bg-gray-50 px-4 py-4 dark:bg-gray-800/30">
+												<td colSpan={4} className="bg-muted/50 px-4 py-4">
 													<div className="space-y-2">
-														<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Svar</p>
-														<p className="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200">
+														<p className="text-xs font-medium text-muted-foreground">Svar</p>
+														<p className="whitespace-pre-wrap text-sm text-foreground">
 															{q.answer || "Inget svar"}
 														</p>
 														{q.feedbackComment && (
 															<div className="mt-2">
-																<p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+																<p className="text-xs font-medium text-muted-foreground">
 																	Feedback-kommentar
 																</p>
-																<p className="text-sm text-gray-700 dark:text-gray-300">
+																<p className="text-sm text-foreground">
 																	{q.feedbackComment}
 																</p>
 															</div>
@@ -162,7 +174,7 @@ export function AdminQueriesPage() {
 							})}
 							{data?.queries.length === 0 && (
 								<tr>
-									<td colSpan={4} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+									<td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
 										Inga frågor hittades
 									</td>
 								</tr>

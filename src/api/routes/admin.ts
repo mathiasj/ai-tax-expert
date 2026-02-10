@@ -5,7 +5,7 @@ import pino from "pino";
 import { z } from "zod";
 import { env } from "../../config/env.js";
 import { db } from "../../db/client.js";
-import { chunks, documents, queries, sources } from "../../db/schema.js";
+import { chunks, conversations, documents, queries, sources } from "../../db/schema.js";
 import { deletePoints, getCollectionInfo } from "../../processing/indexer.js";
 import { documentQueue } from "../../workers/queue.js";
 import { refreshQueue, triggerRefresh } from "../../workers/refresh-scheduler.js";
@@ -13,25 +13,6 @@ import { scrapeQueue, triggerScrape } from "../../workers/scrape-scheduler.js";
 import { requireAdmin } from "../middleware/admin.js";
 
 const logger = pino({ name: "admin-api" });
-
-const DOKTYP_TO_DOCTYPE: Record<string, string> = {
-	sfs: "lagtext",
-	prop: "proposition",
-	sou: "sou",
-};
-
-/** Parse riksdagen URL doktyp param to map to document docType values. */
-function inferDocTypesFromUrl(url: string): string[] | null {
-	try {
-		const parsed = new URL(url);
-		const doktyp = parsed.searchParams.get("doktyp");
-		if (!doktyp) return null;
-		const mapped = doktyp.split(",").map((t) => DOKTYP_TO_DOCTYPE[t.trim()]).filter(Boolean);
-		return mapped.length > 0 ? mapped : null;
-	} catch {
-		return null;
-	}
-}
 
 const admin = new Hono();
 
@@ -122,6 +103,7 @@ admin.post("/documents/:id/reprocess", async (c) => {
 		.select({
 			id: documents.id,
 			filePath: documents.filePath,
+			rawContent: documents.rawContent,
 			title: documents.title,
 		})
 		.from(documents)
@@ -129,7 +111,7 @@ admin.post("/documents/:id/reprocess", async (c) => {
 		.limit(1);
 
 	if (!doc) return c.json({ error: "Document not found" }, 404);
-	if (!doc.filePath) return c.json({ error: "Document has no file path" }, 400);
+	if (!doc.filePath && !doc.rawContent) return c.json({ error: "Document has no file path or content" }, 400);
 
 	// Delete existing chunks + Qdrant points
 	const chunkRows = await db
@@ -156,8 +138,9 @@ admin.post("/documents/:id/reprocess", async (c) => {
 	// Queue for reprocessing
 	await documentQueue.add("process", {
 		documentId: docId,
-		filePath: doc.filePath,
+		filePath: doc.filePath ?? "",
 		title: doc.title,
+		content: doc.rawContent ?? undefined,
 	});
 
 	return c.json({ success: true, message: "Document queued for reprocessing" });
@@ -228,17 +211,13 @@ admin.get("/sources", async (c) => {
 		db.select({ count: count() }).from(sources).where(where),
 	]);
 
-	// Get document counts per source, using URL doktyp to distinguish sub-types
+	// Get document counts per source using sourceId FK
 	const enriched = await Promise.all(
 		rows.map(async (s) => {
-			const docTypes = inferDocTypesFromUrl(s.url);
-			const conditions = [eq(documents.source, s.source)];
-			if (docTypes) conditions.push(inArray(documents.docType, docTypes));
-
 			const [docCount] = await db
 				.select({ count: count() })
 				.from(documents)
-				.where(and(...conditions));
+				.where(eq(documents.sourceId, s.id));
 			return { ...s, documentCount: docCount.count };
 		}),
 	);
@@ -250,6 +229,10 @@ const createSourceSchema = z.object({
 	url: z.string().url().max(2000),
 	source: z.enum(["skatteverket", "lagrummet", "riksdagen", "manual"]),
 	label: z.string().max(255).optional(),
+	maxDocuments: z.coerce.number().int().min(1).max(10000).optional(),
+	scrapeIntervalMinutes: z.coerce.number().int().min(0).max(525600).optional(),
+	rateLimitMs: z.coerce.number().int().min(100).max(60000).optional(),
+	isActive: z.boolean().optional(),
 });
 
 admin.post("/sources", async (c) => {
@@ -277,6 +260,11 @@ admin.post("/sources", async (c) => {
 const patchSourceSchema = z.object({
 	status: z.enum(["active", "paused", "failed"]).optional(),
 	label: z.string().max(255).nullable().optional(),
+	url: z.string().url().max(2000).optional(),
+	maxDocuments: z.coerce.number().int().min(1).max(10000).optional(),
+	scrapeIntervalMinutes: z.coerce.number().int().min(0).max(525600).optional(),
+	rateLimitMs: z.coerce.number().int().min(100).max(60000).optional(),
+	isActive: z.boolean().optional(),
 });
 
 admin.patch("/sources/:id", async (c) => {
@@ -288,12 +276,34 @@ admin.patch("/sources/:id", async (c) => {
 	}
 
 	const updates: Record<string, unknown> = { updatedAt: new Date() };
-	if (parsed.data.status) updates.status = parsed.data.status;
+	if (parsed.data.status !== undefined) updates.status = parsed.data.status;
 	if (parsed.data.label !== undefined) updates.label = parsed.data.label;
+	if (parsed.data.url !== undefined) updates.url = parsed.data.url;
+	if (parsed.data.maxDocuments !== undefined) updates.maxDocuments = parsed.data.maxDocuments;
+	if (parsed.data.scrapeIntervalMinutes !== undefined) updates.scrapeIntervalMinutes = parsed.data.scrapeIntervalMinutes;
+	if (parsed.data.rateLimitMs !== undefined) updates.rateLimitMs = parsed.data.rateLimitMs;
+	if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
 
 	await db.update(sources).set(updates).where(eq(sources.id, id));
 
-	return c.json({ success: true });
+	const [updated] = await db.select().from(sources).where(eq(sources.id, id)).limit(1);
+
+	return c.json(updated ?? { success: true });
+});
+
+admin.get("/sources/:id", async (c) => {
+	const id = c.req.param("id");
+
+	const [src] = await db.select().from(sources).where(eq(sources.id, id)).limit(1);
+
+	if (!src) return c.json({ error: "Source not found" }, 404);
+
+	const [docCount] = await db
+		.select({ count: count() })
+		.from(documents)
+		.where(eq(documents.sourceId, id));
+
+	return c.json({ ...src, documentCount: docCount.count });
 });
 
 admin.delete("/sources/:id", async (c) => {
@@ -405,8 +415,7 @@ admin.post("/refresh/trigger", async (c) => {
 // ─── Scraping ────────────────────────────────────────────────
 
 const triggerScrapeSchema = z.object({
-	target: z.enum(["skatteverket", "lagrummet", "riksdagen"]),
-	limit: z.coerce.number().int().min(1).max(1000).optional(),
+	sourceId: z.string().uuid(),
 });
 
 admin.post("/scrape/trigger", async (c) => {
@@ -416,59 +425,72 @@ admin.post("/scrape/trigger", async (c) => {
 		return c.json({ error: "Invalid request", details: parsed.error.format() }, 400);
 	}
 
-	const jobId = await triggerScrape(parsed.data.target, parsed.data.limit);
-	return c.json({ success: true, jobId });
+	try {
+		const jobId = await triggerScrape(parsed.data.sourceId);
+		return c.json({ success: true, jobId });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Unknown error";
+		return c.json({ error: message }, 400);
+	}
 });
 
 admin.get("/scrape/status", async (c) => {
-	const targets = ["skatteverket", "lagrummet", "riksdagen"] as const;
-	const statuses = [];
+	const [waiting, active, completed, failed] = await Promise.all([
+		scrapeQueue.getWaitingCount(),
+		scrapeQueue.getActiveCount(),
+		scrapeQueue.getCompletedCount(),
+		scrapeQueue.getFailedCount(),
+	]);
 
-	for (const target of targets) {
-		const [waiting, active, completed, failed] = await Promise.all([
-			scrapeQueue.getWaitingCount(),
-			scrapeQueue.getActiveCount(),
-			scrapeQueue.getCompletedCount(),
-			scrapeQueue.getFailedCount(),
-		]);
-
-		// Get last completed job for this target
-		const completedJobs = await scrapeQueue.getCompleted(0, 20);
-		const lastForTarget = completedJobs.find((j) => j.data.target === target);
-
-		statuses.push({
-			target,
-			waiting,
-			active,
-			completed,
-			failed,
-			lastCompleted: lastForTarget?.finishedOn
-				? new Date(lastForTarget.finishedOn).toISOString()
-				: undefined,
-		});
-	}
-
-	return c.json({ statuses });
+	return c.json({
+		waiting,
+		active,
+		completed,
+		failed,
+	});
 });
 
 // ─── Activity Log ────────────────────────────────────────────
 
+const activitySchema = z.object({
+	sourceId: z.string().uuid().optional(),
+	source: z.enum(["skatteverket", "lagrummet", "riksdagen", "manual"]).optional(),
+	limit: z.coerce.number().int().min(1).max(200).default(50),
+	offset: z.coerce.number().int().min(0).default(0),
+});
+
 admin.get("/activity", async (c) => {
-	// 50 most recently updated documents
-	const rows = await db
-		.select({
-			id: documents.id,
-			title: documents.title,
-			source: documents.source,
-			sourceUrl: documents.sourceUrl,
-			status: documents.status,
-			errorMessage: documents.errorMessage,
-			createdAt: documents.createdAt,
-			updatedAt: documents.updatedAt,
-		})
-		.from(documents)
-		.orderBy(sql`${documents.updatedAt} desc`)
-		.limit(50);
+	const parsed = activitySchema.safeParse(c.req.query());
+	const { sourceId, source, limit, offset } = parsed.success
+		? parsed.data
+		: { sourceId: undefined, source: undefined, limit: 50, offset: 0 };
+
+	const conditions = [];
+	if (sourceId) conditions.push(eq(documents.sourceId, sourceId));
+	else if (source) conditions.push(eq(documents.source, source));
+
+	const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+	const [rows, [totalResult]] = await Promise.all([
+		db
+			.select({
+				id: documents.id,
+				title: documents.title,
+				source: documents.source,
+				sourceId: documents.sourceId,
+				sourceUrl: documents.sourceUrl,
+				status: documents.status,
+				errorMessage: documents.errorMessage,
+				createdAt: documents.createdAt,
+				updatedAt: documents.updatedAt,
+			})
+			.from(documents)
+			.where(where)
+			.orderBy(sql`${documents.updatedAt} desc`)
+			.limit(limit)
+			.offset(offset),
+		db.select({ count: count() }).from(documents).where(where),
+	]);
 
 	// Queue stats
 	const [docWaiting, docActive] = await Promise.all([
@@ -482,6 +504,7 @@ admin.get("/activity", async (c) => {
 
 	return c.json({
 		documents: rows,
+		total: totalResult.count,
 		queue: { waiting: docWaiting, active: docActive },
 		scrapeQueue: { waiting: scrWaiting, active: scrActive },
 	});
@@ -569,17 +592,12 @@ admin.get("/health", async (c) => {
 			scrapeQueue.getCompletedCount(),
 			scrapeQueue.getFailedCount(),
 		]);
-		const scrapeSchedulers = await scrapeQueue.getJobSchedulers();
-		const nextScrapeRun = scrapeSchedulers[0]?.next
-			? new Date(scrapeSchedulers[0].next).toISOString()
-			: undefined;
 		result.scrapeScheduler = {
 			status: "ok",
 			waiting: sWaiting,
 			active: sActive,
 			completed: sCompleted,
 			failed: sFailed,
-			nextRun: nextScrapeRun,
 		};
 	} catch (err) {
 		result.scrapeScheduler = { status: "error", error: String(err) };
@@ -613,6 +631,66 @@ admin.get("/health", async (c) => {
 	};
 
 	return c.json(result);
+});
+
+// ─── Dev Reset ───────────────────────────────────────────────
+
+admin.post("/reset", async (c) => {
+	if (env.NODE_ENV === "production") {
+		return c.json({ error: "Reset is disabled in production" }, 403);
+	}
+
+	const body = await c.req.json().catch(() => ({}));
+	const confirm = (body as Record<string, unknown>).confirm;
+	if (confirm !== "RESET_ALL") {
+		return c.json({ error: 'Send { "confirm": "RESET_ALL" } to proceed' }, 400);
+	}
+
+	logger.warn("Resetting all data (dev mode)");
+
+	const result: Record<string, string> = {};
+
+	// 1. Clear BullMQ queues
+	try {
+		await documentQueue.obliterate({ force: true });
+		await scrapeQueue.obliterate({ force: true });
+		await refreshQueue.obliterate({ force: true });
+		result.queues = "cleared";
+	} catch (err) {
+		result.queues = `error: ${err instanceof Error ? err.message : String(err)}`;
+	}
+
+	// 2. Clear Qdrant collection
+	try {
+		const { QdrantClient } = await import("@qdrant/js-client-rest");
+		const qdrant = new QdrantClient({ url: env.QDRANT_URL });
+		const collections = await qdrant.getCollections();
+		if (collections.collections.some((col) => col.name === env.QDRANT_COLLECTION)) {
+			await qdrant.deleteCollection(env.QDRANT_COLLECTION);
+		}
+		result.qdrant = "collection deleted";
+	} catch (err) {
+		result.qdrant = `error: ${err instanceof Error ? err.message : String(err)}`;
+	}
+
+	// 3. Clear PostgreSQL tables (order matters for FK constraints)
+	try {
+		await db.delete(chunks);
+		await db.delete(queries);
+		await db.delete(conversations);
+		await db.delete(documents);
+		if ((body as Record<string, unknown>).includeSources) {
+			await db.delete(sources);
+			result.postgres = "all tables cleared (users kept)";
+		} else {
+			result.postgres = "chunks, queries, conversations, documents cleared (sources & users kept)";
+		}
+	} catch (err) {
+		result.postgres = `error: ${err instanceof Error ? err.message : String(err)}`;
+	}
+
+	logger.warn(result, "Reset complete");
+	return c.json({ success: true, ...result });
 });
 
 export { admin };

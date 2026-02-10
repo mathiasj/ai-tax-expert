@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { useSystemHealth, useTriggerScrape } from "@/hooks/use-admin";
+import { useSources, useSystemHealth, useTriggerScrape } from "@/hooks/use-admin";
 import { api } from "@/lib/api-client";
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -42,6 +42,7 @@ function ServiceCard({
 
 export function AdminSystemPage() {
 	const { data, isLoading, refetch } = useSystemHealth();
+	const { data: sourcesData } = useSources({ limit: 200 });
 	const [refreshing, setRefreshing] = useState(false);
 	const [scraping, setScraping] = useState(false);
 	const { trigger: triggerScrape } = useTriggerScrape();
@@ -49,11 +50,8 @@ export function AdminSystemPage() {
 	const handleTriggerScrapeAll = async () => {
 		setScraping(true);
 		try {
-			await Promise.all([
-				triggerScrape("riksdagen"),
-				triggerScrape("lagrummet"),
-				triggerScrape("skatteverket"),
-			]);
+			const activeSources = sourcesData?.sources.filter((s) => s.isActive && s.source !== "manual") ?? [];
+			await Promise.all(activeSources.map((s) => triggerScrape(s.id)));
 			setTimeout(refetch, 1000);
 		} catch {
 			// ignore

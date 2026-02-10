@@ -1,13 +1,32 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog } from "@/components/ui/dialog";
-import { Drawer } from "@/components/ui/drawer";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
-import { Select } from "@/components/ui/select";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import {
+	Sheet,
+	SheetContent,
+	SheetHeader,
+	SheetTitle,
+} from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import {
 	useAdminDocuments,
@@ -94,7 +113,7 @@ export function AdminDocumentsPage() {
 
 	return (
 		<div className="space-y-4 p-6">
-			<h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Dokument</h2>
+			<h2 className="text-xl font-bold text-foreground">Dokument</h2>
 
 			{/* Filters */}
 			<Card className="flex flex-wrap items-end gap-3 p-4">
@@ -107,20 +126,30 @@ export function AdminDocumentsPage() {
 					/>
 				</div>
 				<div style={{ minWidth: "150px" }}>
-					<Select
-						options={sourceOptions}
-						placeholder="Alla källor"
-						value={source}
-						onChange={(e) => setSource(e.target.value)}
-					/>
+					<Select value={source || "_all"} onValueChange={(v) => setSource(v === "_all" ? "" : v)}>
+						<SelectTrigger className="w-full">
+							<SelectValue placeholder="Alla källor" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="_all">Alla källor</SelectItem>
+							{sourceOptions.map((opt) => (
+								<SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</div>
 				<div style={{ minWidth: "150px" }}>
-					<Select
-						options={statusOptions}
-						placeholder="Alla statusar"
-						value={status}
-						onChange={(e) => setStatus(e.target.value)}
-					/>
+					<Select value={status || "_all"} onValueChange={(v) => setStatus(v === "_all" ? "" : v)}>
+						<SelectTrigger className="w-full">
+							<SelectValue placeholder="Alla statusar" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="_all">Alla statusar</SelectItem>
+							{statusOptions.map((opt) => (
+								<SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</div>
 				<Button size="sm" onClick={handleSearch}>
 					Sök
@@ -135,40 +164,40 @@ export function AdminDocumentsPage() {
 			) : (
 				<Card className="overflow-x-auto p-0">
 					<table className="w-full text-left text-sm">
-						<thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+						<thead className="border-b bg-muted/50">
 							<tr>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Titel</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Källa</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Status</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Chunks</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Skapad</th>
-								<th className="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Åtgärder</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Titel</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Källa</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Chunks</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Skapad</th>
+								<th className="px-4 py-3 font-medium text-muted-foreground">Åtgärder</th>
 							</tr>
 						</thead>
 						<tbody>
 							{data?.documents.map((doc) => (
 								<tr
 									key={doc.id}
-									className={`border-b border-gray-100 dark:border-gray-800 ${
+									className={`border-b border-border ${
 										(doc as any).supersededById
 											? "opacity-60"
-											: "hover:bg-gray-50 dark:hover:bg-gray-800/30"
+											: "hover:bg-muted/50"
 									}`}
 								>
-									<td className="max-w-xs truncate px-4 py-3 text-gray-900 dark:text-gray-100">
+									<td className="max-w-xs truncate px-4 py-3 text-foreground">
 										{doc.title}
 										{(doc as any).supersededById && (
 											<Badge variant="warning" className="ml-2">Ersatt</Badge>
 										)}
 									</td>
-									<td className="px-4 py-3 text-gray-600 dark:text-gray-400">{doc.source}</td>
+									<td className="px-4 py-3 text-muted-foreground">{doc.source}</td>
 									<td className="px-4 py-3">
 										<Badge variant={statusBadgeVariant(doc.status)}>{doc.status}</Badge>
 									</td>
-									<td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+									<td className="px-4 py-3 text-muted-foreground">
 										{(doc as any).chunkCount ?? "-"}
 									</td>
-									<td className="whitespace-nowrap px-4 py-3 text-gray-500 dark:text-gray-400">
+									<td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
 										{formatDate(doc.createdAt)}
 									</td>
 									<td className="px-4 py-3">
@@ -195,7 +224,7 @@ export function AdminDocumentsPage() {
 												variant="ghost"
 												size="sm"
 												onClick={() => setDeleteId(doc.id)}
-												className="text-red-600 dark:text-red-400"
+												className="text-destructive"
 											>
 												Ta bort
 											</Button>
@@ -205,7 +234,7 @@ export function AdminDocumentsPage() {
 							))}
 							{data?.documents.length === 0 && (
 								<tr>
-									<td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+									<td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
 										Inga dokument hittades
 									</td>
 								</tr>
@@ -217,134 +246,142 @@ export function AdminDocumentsPage() {
 
 			<Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
-			{/* Detail Drawer */}
-			<Drawer
-				open={!!selectedId}
-				onClose={() => setSelectedId(null)}
-				title="Dokumentdetaljer"
-			>
-				{detailLoading ? (
-					<div className="flex h-32 items-center justify-center">
-						<Spinner />
-					</div>
-				) : detail ? (
-					<div className="space-y-4">
-						<div>
-							<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Titel</p>
-							<p className="text-sm text-gray-900 dark:text-gray-100">{detail.title}</p>
+			{/* Detail Sheet (was Drawer) */}
+			<Sheet open={!!selectedId} onOpenChange={(isOpen) => !isOpen && setSelectedId(null)}>
+				<SheetContent side="right" className="w-full max-w-lg overflow-auto">
+					<SheetHeader>
+						<SheetTitle>Dokumentdetaljer</SheetTitle>
+					</SheetHeader>
+					{detailLoading ? (
+						<div className="flex h-32 items-center justify-center">
+							<Spinner />
 						</div>
-						<div className="grid grid-cols-2 gap-4">
+					) : detail ? (
+						<div className="space-y-4">
 							<div>
-								<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Källa</p>
-								<p className="text-sm">{detail.source}</p>
+								<p className="text-xs font-medium text-muted-foreground">Titel</p>
+								<p className="text-sm text-foreground">{detail.title}</p>
 							</div>
-							<div>
-								<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</p>
-								<Badge variant={statusBadgeVariant(detail.status)}>{detail.status}</Badge>
-							</div>
-							<div>
-								<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Chunks</p>
-								<p className="text-sm">{detail.chunkCount}</p>
-							</div>
-							<div>
-								<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Skapad</p>
-								<p className="text-sm">{formatDate(detail.createdAt)}</p>
-							</div>
-							{detail.docType && (
+							<div className="grid grid-cols-2 gap-4">
 								<div>
-									<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Dokumenttyp</p>
-									<p className="text-sm">{detail.docType}</p>
+									<p className="text-xs font-medium text-muted-foreground">Källa</p>
+									<p className="text-sm">{detail.source}</p>
+								</div>
+								<div>
+									<p className="text-xs font-medium text-muted-foreground">Status</p>
+									<Badge variant={statusBadgeVariant(detail.status)}>{detail.status}</Badge>
+								</div>
+								<div>
+									<p className="text-xs font-medium text-muted-foreground">Chunks</p>
+									<p className="text-sm">{detail.chunkCount}</p>
+								</div>
+								<div>
+									<p className="text-xs font-medium text-muted-foreground">Skapad</p>
+									<p className="text-sm">{formatDate(detail.createdAt)}</p>
+								</div>
+								{detail.docType && (
+									<div>
+										<p className="text-xs font-medium text-muted-foreground">Dokumenttyp</p>
+										<p className="text-sm">{detail.docType}</p>
+									</div>
+								)}
+								{detail.audience && (
+									<div>
+										<p className="text-xs font-medium text-muted-foreground">Målgrupp</p>
+										<p className="text-sm">{detail.audience}</p>
+									</div>
+								)}
+								{detail.taxArea && (
+									<div>
+										<p className="text-xs font-medium text-muted-foreground">Skatteområde</p>
+										<p className="text-sm">{detail.taxArea}</p>
+									</div>
+								)}
+								<div>
+									<p className="text-xs font-medium text-muted-foreground">Uppdateringspolicy</p>
+									<p className="text-sm">{detail.refreshPolicy}</p>
+								</div>
+								{detail.lastCheckedAt && (
+									<div>
+										<p className="text-xs font-medium text-muted-foreground">Senast kontrollerad</p>
+										<p className="text-sm">{formatDate(detail.lastCheckedAt)}</p>
+									</div>
+								)}
+							</div>
+							{detail.errorMessage && (
+								<div>
+									<p className="text-xs font-medium text-destructive">Felmeddelande</p>
+									<p className="text-sm text-destructive">{detail.errorMessage}</p>
 								</div>
 							)}
-							{detail.audience && (
+							{detail.supersededNote && (
 								<div>
-									<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Målgrupp</p>
-									<p className="text-sm">{detail.audience}</p>
+									<p className="text-xs font-medium text-amber-500">Ersatt</p>
+									<p className="text-sm text-amber-700 dark:text-amber-400">{detail.supersededNote}</p>
 								</div>
 							)}
-							{detail.taxArea && (
+							{detail.sourceUrl && (
 								<div>
-									<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Skatteområde</p>
-									<p className="text-sm">{detail.taxArea}</p>
+									<p className="text-xs font-medium text-muted-foreground">Käll-URL</p>
+									<p className="truncate text-sm text-primary">{detail.sourceUrl}</p>
 								</div>
 							)}
-							<div>
-								<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Uppdateringspolicy</p>
-								<p className="text-sm">{detail.refreshPolicy}</p>
-							</div>
-							{detail.lastCheckedAt && (
-								<div>
-									<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Senast kontrollerad</p>
-									<p className="text-sm">{formatDate(detail.lastCheckedAt)}</p>
-								</div>
-							)}
-						</div>
-						{detail.errorMessage && (
-							<div>
-								<p className="text-xs font-medium text-red-500">Felmeddelande</p>
-								<p className="text-sm text-red-700 dark:text-red-400">{detail.errorMessage}</p>
-							</div>
-						)}
-						{detail.supersededNote && (
-							<div>
-								<p className="text-xs font-medium text-amber-500">Ersatt</p>
-								<p className="text-sm text-amber-700 dark:text-amber-400">{detail.supersededNote}</p>
-							</div>
-						)}
-						{detail.sourceUrl && (
-							<div>
-								<p className="text-xs font-medium text-gray-500 dark:text-gray-400">Käll-URL</p>
-								<p className="truncate text-sm text-blue-600 dark:text-blue-400">{detail.sourceUrl}</p>
-							</div>
-						)}
 
-						{/* Chunks */}
-						<div className="border-t border-gray-200 pt-4 dark:border-gray-700">
-							<h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
-								Chunks ({chunksData?.total ?? 0})
-							</h3>
-							{chunksLoading ? (
-								<Spinner size="sm" />
-							) : (
-								<div className="space-y-2">
-									{chunksData?.chunks.map((chunk) => (
-										<div
-											key={chunk.id}
-											className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
-										>
-											<p className="mb-1 text-xs text-gray-400">#{chunk.chunkIndex}</p>
-											<p className="line-clamp-4 text-xs text-gray-700 dark:text-gray-300">
-												{chunk.content}
-											</p>
-										</div>
-									))}
-								</div>
-							)}
-							{chunksData && (
-								<div className="mt-2">
-									<Pagination
-										page={chunkPage}
-										totalPages={Math.ceil(chunksData.total / 20)}
-										onPageChange={setChunkPage}
-									/>
-								</div>
-							)}
+							{/* Chunks */}
+							<div className="border-t border-border pt-4">
+								<h3 className="mb-2 text-sm font-semibold text-foreground">
+									Chunks ({chunksData?.total ?? 0})
+								</h3>
+								{chunksLoading ? (
+									<Spinner size="sm" />
+								) : (
+									<div className="space-y-2">
+										{chunksData?.chunks.map((chunk) => (
+											<div
+												key={chunk.id}
+												className="rounded-lg border border-border p-3"
+											>
+												<p className="mb-1 text-xs text-muted-foreground">#{chunk.chunkIndex}</p>
+												<p className="line-clamp-4 text-xs text-foreground">
+													{chunk.content}
+												</p>
+											</div>
+										))}
+									</div>
+								)}
+								{chunksData && (
+									<div className="mt-2">
+										<Pagination
+											page={chunkPage}
+											totalPages={Math.ceil(chunksData.total / 20)}
+											onPageChange={setChunkPage}
+										/>
+									</div>
+								)}
+							</div>
 						</div>
-					</div>
-				) : null}
-			</Drawer>
+					) : null}
+				</SheetContent>
+			</Sheet>
 
 			{/* Delete Dialog */}
-			<Dialog
-				open={!!deleteId}
-				onClose={() => setDeleteId(null)}
-				title="Ta bort dokument"
-				description="Är du säker? Dokumentet och alla dess chunks tas bort permanent, inklusive vektorer i Qdrant."
-				variant="danger"
-				confirmLabel="Ta bort"
-				onConfirm={handleDelete}
-				isLoading={deleting}
-			/>
+			<Dialog open={!!deleteId} onOpenChange={(isOpen) => !isOpen && setDeleteId(null)}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Ta bort dokument</DialogTitle>
+						<DialogDescription>
+							Är du säker? Dokumentet och alla dess chunks tas bort permanent, inklusive vektorer i Qdrant.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setDeleteId(null)}>Avbryt</Button>
+						<Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+							{deleting && <Loader2 className="animate-spin" />}
+							Ta bort
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useAuthContext } from "@/contexts/auth-context";
 import { api } from "@/lib/api-client";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { UpdateProfileResponse } from "@/types/api";
 
 export function ProfileForm() {
@@ -32,25 +33,29 @@ export function ProfileForm() {
 
 	return (
 		<div className="space-y-4">
-			<Input
-				id="profile-email"
-				label="E-post"
-				value={user?.email ?? ""}
-				disabled
-				readOnly
-			/>
-			<Input
-				id="profile-name"
-				label="Namn"
-				value={name}
-				onChange={(e) => setName(e.target.value)}
-				placeholder="Ditt namn"
-			/>
+			<div className="space-y-2">
+				<Label htmlFor="profile-email">E-post</Label>
+				<Input
+					id="profile-email"
+					value={user?.email ?? ""}
+					disabled
+					readOnly
+				/>
+			</div>
+			<div className="space-y-2">
+				<Label htmlFor="profile-name">Namn</Label>
+				<Input
+					id="profile-name"
+					value={name}
+					onChange={(e) => setName(e.target.value)}
+					placeholder="Ditt namn"
+				/>
+			</div>
 			<Button disabled={!hasChanged || isSaving} onClick={handleSave}>
 				{isSaving ? "Sparar..." : "Spara"}
 			</Button>
 			{message && (
-				<p className="text-xs text-gray-500 dark:text-gray-400">{message}</p>
+				<p className="text-xs text-muted-foreground">{message}</p>
 			)}
 		</div>
 	);

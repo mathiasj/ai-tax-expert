@@ -17,8 +17,8 @@ import { AdminOverviewPage } from "@/pages/admin/admin-overview-page";
 import { AdminDocumentsPage } from "@/pages/admin/admin-documents-page";
 import { AdminSourcesPage } from "@/pages/admin/admin-sources-page";
 import { AdminQueriesPage } from "@/pages/admin/admin-queries-page";
+import { AdminSourceDetailPage } from "@/pages/admin/admin-source-detail-page";
 import { AdminSystemPage } from "@/pages/admin/admin-system-page";
-import { AdminLogPage } from "@/pages/admin/admin-log-page";
 
 export function App() {
 	return (
@@ -56,9 +56,9 @@ export function App() {
 						<Route path="/admin" element={<AdminOverviewPage />} />
 						<Route path="/admin/documents" element={<AdminDocumentsPage />} />
 						<Route path="/admin/sources" element={<AdminSourcesPage />} />
+						<Route path="/admin/sources/:id" element={<AdminSourceDetailPage />} />
 						<Route path="/admin/queries" element={<AdminQueriesPage />} />
 						<Route path="/admin/system" element={<AdminSystemPage />} />
-						<Route path="/admin/log" element={<AdminLogPage />} />
 					</Route>
 
 					<Route path="*" element={<Navigate to="/" replace />} />

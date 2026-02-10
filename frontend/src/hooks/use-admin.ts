@@ -6,6 +6,7 @@ import type {
 	AdminDocumentDetail,
 	AdminQueriesResponse,
 	AdminQueryDetail,
+	AdminSource,
 	AdminSourcesResponse,
 	DocumentsResponse,
 	FeedbackStats,
@@ -15,20 +16,21 @@ import type {
 
 // ─── Activity Log ────────────────────────────────────────────
 
-export function useActivity(refreshInterval = 5000) {
+export function useActivity(refreshInterval = 5000, sourceId?: string) {
 	const [data, setData] = useState<ActivityResponse | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 
 	const fetch = useCallback(async () => {
 		try {
-			const result = await api.get<ActivityResponse>("/api/admin/activity");
+			const params = sourceId ? `?sourceId=${sourceId}` : "";
+			const result = await api.get<ActivityResponse>(`/api/admin/activity${params}`);
 			setData(result);
 		} catch {
 			// keep previous data on error
 		} finally {
 			setIsLoading(false);
 		}
-	}, []);
+	}, [sourceId]);
 
 	useEffect(() => {
 		fetch();
@@ -37,6 +39,70 @@ export function useActivity(refreshInterval = 5000) {
 	}, [fetch, refreshInterval]);
 
 	return { data, isLoading, refetch: fetch };
+}
+
+export function useSourceActivity(
+	sourceId: string | null,
+	options: { limit?: number; offset?: number; refreshInterval?: number } = {},
+) {
+	const { limit = 50, offset = 0, refreshInterval = 5000 } = options;
+	const [data, setData] = useState<ActivityResponse | null>(null);
+	const [isLoading, setIsLoading] = useState(true);
+
+	const fetch = useCallback(async () => {
+		if (!sourceId) {
+			setData(null);
+			setIsLoading(false);
+			return;
+		}
+		try {
+			const params = new URLSearchParams({ sourceId, limit: String(limit), offset: String(offset) });
+			const result = await api.get<ActivityResponse>(`/api/admin/activity?${params}`);
+			setData(result);
+		} catch {
+			// keep previous data on error
+		} finally {
+			setIsLoading(false);
+		}
+	}, [sourceId, limit, offset]);
+
+	useEffect(() => {
+		fetch();
+		if (!sourceId) return;
+		const interval = setInterval(fetch, refreshInterval);
+		return () => clearInterval(interval);
+	}, [fetch, sourceId, refreshInterval]);
+
+	return { data, isLoading, refetch: fetch };
+}
+
+export function useSourceDetail(id: string | null) {
+	const [data, setData] = useState<AdminSource | null>(null);
+	const [isLoading, setIsLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const fetch = useCallback(async () => {
+		if (!id) {
+			setData(null);
+			return;
+		}
+		setIsLoading(true);
+		setError(null);
+		try {
+			const result = await api.get<AdminSource>(`/api/admin/sources/${id}`);
+			setData(result);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Unknown error");
+		} finally {
+			setIsLoading(false);
+		}
+	}, [id]);
+
+	useEffect(() => {
+		fetch();
+	}, [fetch]);
+
+	return { data, isLoading, error, refetch: fetch };
 }
 
 // ─── Documents ───────────────────────────────────────────────
@@ -216,6 +282,27 @@ export function useCreateSource() {
 	return { create, isLoading };
 }
 
+export function useUpdateSource() {
+	const [isLoading, setIsLoading] = useState(false);
+
+	const updateSource = async (
+		id: string,
+		data: Partial<Pick<AdminSource, "label" | "url" | "isActive" | "maxDocuments" | "scrapeIntervalMinutes" | "rateLimitMs" | "status">>,
+	): Promise<AdminSource | null> => {
+		setIsLoading(true);
+		try {
+			const result = await api.patch<AdminSource>(`/api/admin/sources/${id}`, data);
+			return result;
+		} catch {
+			return null;
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	return { updateSource, isLoading };
+}
+
 export function useDeleteSource() {
 	const [isLoading, setIsLoading] = useState(false);
 
@@ -330,10 +417,10 @@ export function useScrapeStatus() {
 export function useTriggerScrape() {
 	const [isLoading, setIsLoading] = useState(false);
 
-	const trigger = async (target: string, limit?: number) => {
+	const trigger = async (sourceId: string) => {
 		setIsLoading(true);
 		try {
-			await api.post("/api/admin/scrape/trigger", { target, limit });
+			await api.post("/api/admin/scrape/trigger", { sourceId });
 			return true;
 		} catch {
 			return false;

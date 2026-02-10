@@ -27,25 +27,33 @@ export class RiksdagenClient extends BaseScraper {
 		const documents: ScrapedDocument[] = [];
 		const limit = this.options.limit ?? 50;
 
-		// Fetch propositions + SOU
-		this.logger.info("Fetching tax-related propositions from Riksdagen");
-		try {
-			const results = await this.searchTaxPropositions(limit);
-			await this.fetchResults(results, documents);
-		} catch (error) {
-			this.logger.error({ error }, "Failed to search propositions");
+		// Determine which document types to fetch based on doktyp config
+		const doktyp = this.options.doktyp;
+		const types = doktyp ? doktyp.split(",").map((t) => t.trim().toLowerCase()) : [];
+		const fetchProps = types.length === 0 || types.includes("prop") || types.includes("sou");
+		const fetchSfs = types.length === 0 || types.includes("sfs");
+
+		if (fetchProps) {
+			this.logger.info("Fetching tax-related propositions from Riksdagen");
+			try {
+				const results = await this.searchTaxPropositions(limit);
+				await this.fetchResults(results, documents);
+			} catch (error) {
+				this.logger.error({ error }, "Failed to search propositions");
+			}
 		}
 
-		// Fetch SFS (gällande lagtext)
-		this.logger.info("Fetching tax-related SFS (lagtext) from Riksdagen");
-		try {
-			const results = await this.searchTaxLaws(limit);
-			await this.fetchResults(results, documents);
-		} catch (error) {
-			this.logger.error({ error }, "Failed to search SFS");
+		if (fetchSfs) {
+			this.logger.info("Fetching tax-related SFS (lagtext) from Riksdagen");
+			try {
+				const results = await this.searchTaxLaws(limit);
+				await this.fetchResults(results, documents);
+			} catch (error) {
+				this.logger.error({ error }, "Failed to search SFS");
+			}
 		}
 
-		this.logger.info({ total: documents.length }, "Riksdagen scraping complete");
+		this.logger.info({ total: documents.length, doktyp: doktyp ?? "all" }, "Riksdagen scraping complete");
 		return documents;
 	}
 

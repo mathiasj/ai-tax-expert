@@ -154,6 +154,7 @@ export interface ActivityDocument {
 	id: string;
 	title: string;
 	source: string;
+	sourceId: string | null;
 	sourceUrl: string | null;
 	status: string;
 	errorMessage: string | null;
@@ -163,6 +164,7 @@ export interface ActivityDocument {
 
 export interface ActivityResponse {
 	documents: ActivityDocument[];
+	total: number;
 	queue: { waiting: number; active: number };
 	scrapeQueue: { waiting: number; active: number };
 }
@@ -212,6 +214,10 @@ export interface AdminSource {
 	source: string;
 	label: string | null;
 	status: string;
+	maxDocuments: number;
+	scrapeIntervalMinutes: number;
+	rateLimitMs: number;
+	isActive: boolean;
 	lastScrapedAt: string | null;
 	lastError: string | null;
 	metadata: Record<string, unknown> | null;

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Header } from "./header";
 import { Sidebar } from "./sidebar";
-import { ToastContainer } from "@/components/ui/toast";
+import { Toaster } from "@/components/ui/sonner";
 
 export function AppLayout() {
 	const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -42,7 +42,7 @@ export function AppLayout() {
 				</main>
 			</div>
 
-			<ToastContainer />
+			<Toaster />
 		</div>
 	);
 }

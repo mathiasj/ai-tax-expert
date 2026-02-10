@@ -8,7 +8,7 @@
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun run dist/index.js",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "bun run scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "scrape": "bun run scripts/scrape-all.ts",
     "process": "bun run scripts/process-documents.ts",

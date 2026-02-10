@@ -1,7 +1,9 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 
 export function RegisterForm() {
@@ -27,43 +29,50 @@ export function RegisterForm() {
 
 	return (
 		<form onSubmit={handleSubmit} className="space-y-4">
-			<Input
-				id="name"
-				label="Namn (valfritt)"
-				type="text"
-				value={name}
-				onChange={(e) => setName(e.target.value)}
-				placeholder="Ditt namn"
-				autoComplete="name"
-			/>
-			<Input
-				id="email"
-				label="E-post"
-				type="email"
-				value={email}
-				onChange={(e) => setEmail(e.target.value)}
-				placeholder="din@email.se"
-				required
-				autoComplete="email"
-			/>
-			<Input
-				id="password"
-				label="Lösenord"
-				type="password"
-				value={password}
-				onChange={(e) => setPassword(e.target.value)}
-				placeholder="Minst 8 tecken"
-				required
-				minLength={8}
-				autoComplete="new-password"
-			/>
-			{error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-			<Button type="submit" className="w-full" isLoading={isLoading}>
+			<div className="space-y-2">
+				<Label htmlFor="name">Namn (valfritt)</Label>
+				<Input
+					id="name"
+					type="text"
+					value={name}
+					onChange={(e) => setName(e.target.value)}
+					placeholder="Ditt namn"
+					autoComplete="name"
+				/>
+			</div>
+			<div className="space-y-2">
+				<Label htmlFor="email">E-post</Label>
+				<Input
+					id="email"
+					type="email"
+					value={email}
+					onChange={(e) => setEmail(e.target.value)}
+					placeholder="din@email.se"
+					required
+					autoComplete="email"
+				/>
+			</div>
+			<div className="space-y-2">
+				<Label htmlFor="password">Lösenord</Label>
+				<Input
+					id="password"
+					type="password"
+					value={password}
+					onChange={(e) => setPassword(e.target.value)}
+					placeholder="Minst 8 tecken"
+					required
+					minLength={8}
+					autoComplete="new-password"
+				/>
+			</div>
+			{error && <p className="text-sm text-destructive">{error}</p>}
+			<Button type="submit" className="w-full" disabled={isLoading}>
+				{isLoading && <Loader2 className="animate-spin" />}
 				Skapa konto
 			</Button>
-			<p className="text-center text-sm text-gray-500 dark:text-gray-400">
+			<p className="text-center text-sm text-muted-foreground">
 				Har du redan ett konto?{" "}
-				<Link to="/login" className="text-blue-600 hover:underline dark:text-blue-400">
+				<Link to="/login" className="text-primary hover:underline">
 					Logga in
 				</Link>
 			</p>

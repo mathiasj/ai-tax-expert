@@ -4,7 +4,7 @@ import { useAuthContext } from "@/contexts/auth-context";
 import { useTheme } from "@/hooks/use-theme";
 import { removeToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { ToastContainer } from "@/components/ui/toast";
+import { Toaster } from "@/components/ui/sonner";
 import { AdminSidebar } from "./admin-sidebar";
 
 export function AdminLayout() {
@@ -80,9 +80,6 @@ export function AdminLayout() {
 								</svg>
 							)}
 						</button>
-						<Button variant="ghost" size="sm" onClick={() => navigate("/chat")}>
-							Chatt
-						</Button>
 						<Button variant="ghost" size="sm" onClick={logout}>
 							Logga ut
 						</Button>
@@ -93,7 +90,7 @@ export function AdminLayout() {
 				</main>
 			</div>
 
-			<ToastContainer />
+			<Toaster />
 		</div>
 	);
 }

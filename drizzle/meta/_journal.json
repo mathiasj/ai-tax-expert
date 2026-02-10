@@ -43,6 +43,13 @@
       "when": 1770686806441,
       "tag": "0005_chilly_dracula",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1770742550286,
+      "tag": "0006_minor_guardsmen",
+      "breakpoints": true
     }
   ]
 }

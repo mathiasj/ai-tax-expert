@@ -21,7 +21,7 @@ An AI-powered advisory system that answers Swedish tax questions using RAG (Retr
 ┌──────────────────────────────────────────────────────┐
 │              Processing Pipeline (BullMQ)            │
 │  Parse → Classify → Chunk → Embed → Index            │
-│  Content hash (SHA-256) for change detection         │
+│  Content stored in DB · SHA-256 change detection     │
 └───────┬──────────────┬───────────────┬───────────────┘
         │              │               │
         ▼              ▼               ▼
@@ -51,7 +51,7 @@ An AI-powered advisory system that answers Swedish tax questions using RAG (Retr
 |--------|---------|-----|
 | **Skatteverket** | Tax guidance, ställningstaganden, handledningar | skatteverket.se |
 | **Lagrummet** | HFD court decisions on tax cases | data.lagrummet.se |
-| **Riksdagen** | Tax propositions, SOU reports | data.riksdagen.se |
+| **Riksdagen** | Tax propositions, SOU reports, gällande SFS lagtext | data.riksdagen.se |
 
 ## Tech Stack
 
@@ -136,8 +136,8 @@ bun run worker
 | `bun run process` | Process raw documents into Qdrant |
 | `bun run worker` | Start BullMQ document processing worker |
 | `bun run refresh-worker` | Start refresh scheduler (checks for stale documents) |
-| `bun run scrape-worker` | Start scrape scheduler (scrapes sources weekly) |
-| `bun run eval` | Run RAG evaluation suite (17 test questions) |
+| `bun run scrape-worker` | Start scrape scheduler (per-source interval, 5-min check cycle) |
+| `bun run eval` | Run RAG evaluation suite (`--faq` for 25 FAQ questions, `--all` for both) |
 | `bun run db:generate` | Generate Drizzle migrations |
 | `bun run db:migrate` | Run Drizzle migrations |
 | `bun run lint` | Biome lint check |
@@ -149,7 +149,7 @@ bun run worker
 Scrape → Classify → Chunk → Embed → Index
 ```
 
-1. **Scrape**: Source-specific scrapers fetch documents and save `.txt`/`.pdf` files with `.meta.json` sidecars containing title, sourceUrl, source, section, docType, audience.
+1. **Scrape**: Source-specific scrapers fetch documents, store content in the `rawContent` column in PostgreSQL, and save `.txt`/`.pdf` files to disk as backup. `.meta.json` sidecars contain title, sourceUrl, source, section, docType, audience.
 2. **Classify**: Auto-classification assigns `docType`, `audience`, and `taxArea` based on source metadata and content analysis (see `src/processing/classifier.ts`).
 3. **Chunk**: LangChain `RecursiveCharacterTextSplitter` with Swedish legal separators (§, Kapitel, Avdelning, Avsnitt). Chunk size 1500, overlap 200.
 4. **Embed**: OpenAI `text-embedding-3-large` at 1536 dimensions, batched 100 at a time.
@@ -159,7 +159,7 @@ Scrape → Classify → Chunk → Embed → Index
 
 | Field | Type | Values | Description |
 |-------|------|--------|-------------|
-| `docType` | enum | `stallningstagande`, `handledning`, `proposition`, `sou`, `rattsfallsnotis`, `rattsfallsreferat`, `ovrigt` | Document classification |
+| `docType` | enum | `stallningstagande`, `handledning`, `proposition`, `sou`, `lagtext`, `rattsfallsnotis`, `rattsfallsreferat`, `ovrigt` | Document classification |
 | `audience` | enum | `allman`, `foretag`, `specialist` | Target audience |
 | `taxArea` | varchar | `inkomstskatt`, `kapitalvinst`, `mervardesskatt`, `fastighetsskatt`, `arbetsgivaravgifter`, `punktskatt`, `foretagsbeskattning`, `internationell_beskattning` | Primary tax domain |
 | `refreshPolicy` | enum | `once`, `weekly`, `monthly`, `quarterly` | How often to check for updates |
@@ -169,10 +169,11 @@ Scrape → Classify → Chunk → Embed → Index
 
 The RAG pipeline prioritizes sources by legal authority (instructed in the system prompt):
 
-1. **Lagtext** (propositioner, SOU) — Highest authority, binding
-2. **Rättsfall** (rättsfallsreferat/-notiser) — Precedent-setting, especially HFD
-3. **Ställningstaganden** — Skatteverket's interpretation, guiding but not binding
-4. **Handledningar** — Educational, lowest authority
+1. **Lagtext** (SFS) — Highest authority, binding law
+2. **Propositioner/SOU** — Legislative preparatory works
+3. **Rättsfall** (rättsfallsreferat/-notiser) — Precedent-setting, especially HFD
+4. **Ställningstaganden** — Skatteverket's interpretation, guiding but not binding
+5. **Handledningar** — Educational, lowest authority
 
 When sources conflict, the system weighs them by hierarchy and explains the conflict. Context labels show document type instead of raw source name (e.g., `[Källa 1: Ställningstagande - Titel]`).
 
@@ -238,13 +239,14 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 - `DELETE /api/admin/documents/:id` — Delete document + chunks + Qdrant points
 - `POST /api/admin/documents/:id/reprocess` — Re-queue document
 - `PATCH /api/admin/documents/:id` — Update superseded/refreshPolicy
-- `GET/POST/PATCH/DELETE /api/admin/sources[/:id]` — Source URL CRUD
+- `GET/POST/PATCH/DELETE /api/admin/sources[/:id]` — Source CRUD (GET /:id includes documentCount)
 - `GET /api/admin/queries` — Browse queries with feedback filter
 - `GET /api/admin/queries/stats` — Feedback statistics
 - `GET /api/admin/queries/:id` — Full query detail
 - `GET /api/admin/health` — System health (Qdrant/Redis/PG/BullMQ/Refresh/Scrape Scheduler)
 - `POST /api/admin/refresh/trigger` — Manual refresh trigger
-- `POST /api/admin/scrape/trigger` — Trigger scrape job (`{ target, limit? }`)
+- `POST /api/admin/scrape/trigger` — Trigger scrape job (`{ sourceId }`)
+- `GET /api/admin/activity` — Paginated documents + queue stats (`?sourceId=&limit=&offset=`)
 - `GET /api/admin/scrape/status` — Per-target scrape queue stats
 
 ## Frontend
@@ -253,14 +255,14 @@ The frontend runs at `http://localhost:5173` and proxies API requests to the bac
 
 - **Chat** (`/chat`) — Main chat interface with source filters, markdown answers, citation badges, and thumbs up/down feedback
 - **Dashboard** (`/dashboard`) — Analytics overview
-- **Admin** (`/admin`) — Separate admin dashboard (admin users only) for managing documents, sources, queries, monitoring system health, and triggering refresh/scrape jobs
+- **Admin** (`/admin`) — Separate admin dashboard (admin users only) for managing documents, sources (list + detail page with paginated documents), queries, monitoring system health, and triggering refresh/scrape jobs
 
 ## Project Structure
 
 ```
 src/
 ├── config/env.ts           # Zod-validated environment config
-├── db/schema.ts            # Drizzle tables + enums (docType, audience, refreshPolicy)
+├── db/schema.ts            # Drizzle tables + enums (docType, audience, refreshPolicy); rawContent on documents
 ├── db/client.ts            # Drizzle PostgreSQL client
 ├── db/seed.ts              # Dev seed users
 ├── auth/                   # JWT + password hashing
@@ -277,9 +279,9 @@ src/
 │   └── indexer.ts          # Embeddings → Qdrant (with metadata filters)
 ├── workers/
 │   ├── queue.ts            # Shared BullMQ queue + IORedis connection
-│   ├── document-processor.ts  # Worker: parse → classify → chunk → embed → index
+│   ├── document-processor.ts  # Worker: parse → classify → chunk → embed → index (content: job > DB > file)
 │   ├── refresh-scheduler.ts   # Refresh scheduler: daily cron + manual trigger
-│   └── scrape-scheduler.ts    # Scrape scheduler: weekly cron, health check → scrape → update sources
+│   └── scrape-scheduler.ts    # Scrape scheduler: per-source config, stores rawContent in DB
 ├── core/
 │   ├── types.ts            # Shared types (MetadataFilter, SourceCitation, etc.)
 │   ├── llm/                # LLM provider factory (OpenAI/Anthropic)
@@ -303,7 +305,7 @@ frontend/
 │   ├── hooks/              # Data fetching, auth, feedback, admin
 │   ├── types/              # API type mirrors
 │   └── contexts/           # Auth context
-scripts/                    # CLI tools for scraping and processing
+scripts/                    # CLI tools for scraping, processing, and backfill
 ```
 
 ## Production Deployment
@@ -342,6 +344,11 @@ GitHub Actions runs on push/PR to `main`:
 - **Phase 6** ✅ — Scraper fixes (all three scrapers working)
 - **Phase 7** ✅ — Metadata-enriched pipeline (docType/audience/taxArea classification, source hierarchy, refresh scheduler)
 - **Phase 8** ✅ — Production deploy + scheduled scraping (Docker, graceful shutdown, scrape scheduler, CI)
+- **Phase 9** ✅ — Activity log + pipeline fixes (scrape→DB→worker pipeline, shared volume, Dockerfile CMD fix)
+- **Phase 10** ✅ — SFS lagtext scraping, FAQ-based evaluation, admin dark mode toggle
+- **Phase 11** ✅ — Source as primary entity (per-source config, sourceId FK, source-based scheduler)
+- **Phase 12** ✅ — shadcn/ui migration (Radix primitives, CSS variables theming, Sonner toast)
+- **Phase 13** ✅ — Source detail page + DB-stored content (rawContent column, paginated documents, content fallback chain)
 
 ## License
 

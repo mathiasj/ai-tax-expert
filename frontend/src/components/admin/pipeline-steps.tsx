@@ -1,8 +1,4 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
-import { useActivity } from "@/hooks/use-admin";
 import { cn } from "@/lib/utils";
 import type { ActivityDocument } from "@/types/api";
 
@@ -21,7 +17,7 @@ function stepIndex(status: string): number {
 	return idx === -1 ? -1 : idx;
 }
 
-function relativeTime(dateStr: string): string {
+export function relativeTime(dateStr: string): string {
 	const diff = Date.now() - new Date(dateStr).getTime();
 	const seconds = Math.floor(diff / 1000);
 	if (seconds < 5) return "just nu";
@@ -34,7 +30,7 @@ function relativeTime(dateStr: string): string {
 	return `${days}d sedan`;
 }
 
-function pipelineDuration(createdAt: string, updatedAt: string): string | null {
+export function pipelineDuration(createdAt: string, updatedAt: string): string | null {
 	const start = new Date(createdAt).getTime();
 	const end = new Date(updatedAt).getTime();
 	const diffMs = end - start;
@@ -47,7 +43,7 @@ function pipelineDuration(createdAt: string, updatedAt: string): string | null {
 	return `${minutes}m ${remainSec}s`;
 }
 
-function sourceBadgeVariant(source: string): "default" | "success" | "warning" | "danger" | "info" {
+export function sourceBadgeVariant(source: string): "default" | "success" | "warning" | "danger" | "info" {
 	switch (source) {
 		case "skatteverket":
 			return "info";
@@ -60,7 +56,7 @@ function sourceBadgeVariant(source: string): "default" | "success" | "warning" |
 	}
 }
 
-function PipelineSteps({ status }: { status: string }) {
+export function PipelineSteps({ status }: { status: string }) {
 	const isFailed = status === "failed";
 	const current = isFailed ? -1 : stepIndex(status);
 
@@ -83,9 +79,7 @@ function PipelineSteps({ status }: { status: string }) {
 											? "bg-blue-500 text-white animate-pulse"
 											: isCompleted
 												? "bg-blue-500/80 text-white"
-												: isFailed
-													? "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500"
-													: "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500",
+												: "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500",
 								)}
 							>
 								{isCompleted || isFinal ? "\u2713" : i + 1}
@@ -120,7 +114,7 @@ function PipelineSteps({ status }: { status: string }) {
 	);
 }
 
-function DocumentRow({ doc }: { doc: ActivityDocument }) {
+export function DocumentRow({ doc }: { doc: ActivityDocument }) {
 	const isFailed = doc.status === "failed";
 
 	return (
@@ -171,82 +165,9 @@ function DocumentRow({ doc }: { doc: ActivityDocument }) {
 				</span>
 				{(doc.status === "indexed" || isFailed) && pipelineDuration(doc.createdAt, doc.updatedAt) && (
 					<div className="text-[10px] text-gray-400 dark:text-gray-500">
-						⏱ {pipelineDuration(doc.createdAt, doc.updatedAt)}
+						{pipelineDuration(doc.createdAt, doc.updatedAt)}
 					</div>
 				)}
-			</div>
-		</div>
-	);
-}
-
-export function AdminLogPage() {
-	const { data, isLoading, refetch } = useActivity();
-
-	if (isLoading && !data) {
-		return (
-			<div className="flex h-64 items-center justify-center">
-				<Spinner size="lg" />
-			</div>
-		);
-	}
-
-	const totalDocQueue = (data?.queue.waiting ?? 0) + (data?.queue.active ?? 0);
-	const totalScrapeQueue = (data?.scrapeQueue.waiting ?? 0) + (data?.scrapeQueue.active ?? 0);
-
-	return (
-		<div className="space-y-6 p-6">
-			<div className="flex items-center justify-between">
-				<h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Aktivitetslogg</h2>
-				<Button variant="secondary" size="sm" onClick={refetch}>
-					Uppdatera
-				</Button>
-			</div>
-
-			<div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-				<span className="inline-block h-2 w-2 animate-pulse rounded-full bg-green-500" />
-				Uppdateras automatiskt var 5:e sekund
-			</div>
-
-			{/* Queue summary */}
-			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<Card className="!p-4">
-					<h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-						Dokumentkö
-					</h3>
-					<div className="flex items-baseline gap-3">
-						<span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-							{totalDocQueue}
-						</span>
-						<span className="text-sm text-gray-500 dark:text-gray-400">
-							{data?.queue.waiting ?? 0} väntande, {data?.queue.active ?? 0} aktiva
-						</span>
-					</div>
-				</Card>
-				<Card className="!p-4">
-					<h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-						Skrapningskö
-					</h3>
-					<div className="flex items-baseline gap-3">
-						<span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-							{totalScrapeQueue}
-						</span>
-						<span className="text-sm text-gray-500 dark:text-gray-400">
-							{data?.scrapeQueue.waiting ?? 0} väntande, {data?.scrapeQueue.active ?? 0} aktiva
-						</span>
-					</div>
-				</Card>
-			</div>
-
-			{/* Document list */}
-			<div className="space-y-2">
-				{data?.documents.length === 0 && (
-					<p className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">
-						Inga dokument att visa
-					</p>
-				)}
-				{data?.documents.map((doc) => (
-					<DocumentRow key={doc.id} doc={doc} />
-				))}
 			</div>
 		</div>
 	);

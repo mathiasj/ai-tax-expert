@@ -94,6 +94,9 @@ async function main() {
 			const audience = meta.audience as string | undefined;
 			const taxArea = meta.taxArea as string | undefined;
 
+			// Read file content to store in DB (eliminates file path dependency)
+			const rawContent = await readFile(filePath, "utf-8");
+
 			const [doc] = await db
 				.insert(documents)
 				.values({
@@ -101,6 +104,7 @@ async function main() {
 					source,
 					sourceUrl: meta.sourceUrl || null,
 					filePath,
+					rawContent,
 					status: "pending",
 					metadata: meta,
 					...(docType ? { docType: docType as "stallningstagande" } : {}),
@@ -113,6 +117,7 @@ async function main() {
 				documentId: doc.id,
 				filePath,
 				title: meta.title,
+				content: rawContent,
 			});
 
 			created++;

@@ -1,7 +1,9 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 
 export function LoginForm() {
@@ -40,33 +42,38 @@ export function LoginForm() {
 					Dev-läge: Klicka för att fylla i testanvändare (test@example.se / test123)
 				</button>
 			)}
-			<Input
-				id="email"
-				label="E-post"
-				type="email"
-				value={email}
-				onChange={(e) => setEmail(e.target.value)}
-				placeholder="din@email.se"
-				required
-				autoComplete="email"
-			/>
-			<Input
-				id="password"
-				label="Lösenord"
-				type="password"
-				value={password}
-				onChange={(e) => setPassword(e.target.value)}
-				placeholder="Minst 8 tecken"
-				required
-				autoComplete="current-password"
-			/>
-			{error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-			<Button type="submit" className="w-full" isLoading={isLoading}>
+			<div className="space-y-2">
+				<Label htmlFor="email">E-post</Label>
+				<Input
+					id="email"
+					type="email"
+					value={email}
+					onChange={(e) => setEmail(e.target.value)}
+					placeholder="din@email.se"
+					required
+					autoComplete="email"
+				/>
+			</div>
+			<div className="space-y-2">
+				<Label htmlFor="password">Lösenord</Label>
+				<Input
+					id="password"
+					type="password"
+					value={password}
+					onChange={(e) => setPassword(e.target.value)}
+					placeholder="Minst 8 tecken"
+					required
+					autoComplete="current-password"
+				/>
+			</div>
+			{error && <p className="text-sm text-destructive">{error}</p>}
+			<Button type="submit" className="w-full" disabled={isLoading}>
+				{isLoading && <Loader2 className="animate-spin" />}
 				Logga in
 			</Button>
-			<p className="text-center text-sm text-gray-500 dark:text-gray-400">
+			<p className="text-center text-sm text-muted-foreground">
 				Inget konto?{" "}
-				<Link to="/register" className="text-blue-600 hover:underline dark:text-blue-400">
+				<Link to="/register" className="text-primary hover:underline">
 					Registrera dig
 				</Link>
 			</p>

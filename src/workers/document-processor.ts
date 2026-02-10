@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Worker, type Job } from "bullmq";
 import pino from "pino";
@@ -35,9 +36,9 @@ function computeContentHash(text: string): string {
 }
 
 async function processDocument(job: Job<DocumentJob>): Promise<void> {
-	const { documentId, filePath: rawPath, title } = job.data;
+	const { documentId, filePath: rawPath, title, content: jobContent } = job.data;
 	const filePath = resolve(rawPath);
-	logger.info({ documentId, title, filePath }, "Processing document");
+	logger.info({ documentId, title, filePath, hasContent: !!jobContent }, "Processing document");
 
 	try {
 		// Fetch full document record from DB for metadata
@@ -47,11 +48,19 @@ async function processDocument(job: Job<DocumentJob>): Promise<void> {
 			.where(eq(documents.id, documentId))
 			.limit(1);
 
-		// 1. Parse
+		// 1. Parse — prefer inline content from job > DB rawContent > file on disk
 		await updateStatus(documentId, "parsing");
-		const isPdf = filePath.toLowerCase().endsWith(".pdf");
-		const parsed = isPdf ? await parsePdf(filePath) : await parseTextFile(filePath);
-		logger.info({ documentId, chars: parsed.text.length }, "Parsed");
+		let parsed: { text: string; pageCount: number; metadata: Record<string, unknown> };
+		const inlineContent = jobContent || doc?.rawContent;
+		if (inlineContent) {
+			parsed = { text: inlineContent, pageCount: 1, metadata: {} };
+		} else if (existsSync(filePath)) {
+			const isPdf = filePath.toLowerCase().endsWith(".pdf");
+			parsed = isPdf ? await parsePdf(filePath) : await parseTextFile(filePath);
+		} else {
+			throw new Error(`No content available: job content missing, DB rawContent empty, and file not found at ${filePath}`);
+		}
+		logger.info({ documentId, chars: parsed.text.length, source: inlineContent ? "inline" : "file" }, "Parsed");
 
 		if (!parsed.text || parsed.text.length < 50) {
 			await updateStatus(documentId, "failed", "Document too short after parsing");

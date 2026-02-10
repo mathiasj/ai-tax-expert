@@ -1,4 +1,5 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ChatInputProps {
@@ -61,7 +62,8 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
 					rows={1}
 					className="flex-1 resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:placeholder:text-gray-500 dark:focus:border-blue-400"
 				/>
-				<Button onClick={handleSend} disabled={!value.trim() || isLoading} isLoading={isLoading}>
+				<Button onClick={handleSend} disabled={!value.trim() || isLoading}>
+					{isLoading && <Loader2 className="animate-spin" />}
 					Skicka
 				</Button>
 			</div>

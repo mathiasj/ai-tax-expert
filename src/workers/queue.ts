@@ -10,6 +10,8 @@ export interface DocumentJob {
 	documentId: string;
 	filePath: string;
 	title: string;
+	/** Raw text content — when present, worker uses this instead of reading filePath from disk */
+	content?: string;
 }
 
 export const documentQueue = new Queue<DocumentJob>(QUEUE_NAME, { connection });

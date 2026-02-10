@@ -1,4 +1,4 @@
-import { Button } from "./button";
+import { Button } from "@/components/ui/button";
 
 interface PaginationProps {
 	page: number;
@@ -11,12 +11,12 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
 
 	return (
 		<div className="flex items-center justify-between">
-			<p className="text-sm text-gray-500 dark:text-gray-400">
+			<p className="text-sm text-muted-foreground">
 				Sida {page} av {totalPages}
 			</p>
 			<div className="flex gap-2">
 				<Button
-					variant="secondary"
+					variant="outline"
 					size="sm"
 					onClick={() => onPageChange(page - 1)}
 					disabled={page <= 1}
@@ -24,7 +24,7 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
 					Föregående
 				</Button>
 				<Button
-					variant="secondary"
+					variant="outline"
 					size="sm"
 					onClick={() => onPageChange(page + 1)}
 					disabled={page >= totalPages}

@@ -16,6 +16,8 @@ export interface ScraperOptions {
 	maxRetries: number;
 	limit?: number;
 	timeout?: number; // ms per request, default 30000
+	/** For riksdagen: comma-separated doktyp filter (e.g. "sfs" or "prop,sou") */
+	doktyp?: string;
 	/** Called immediately when a document is scraped — before scrape() returns */
 	onDocument?: (doc: ScrapedDocument) => Promise<void>;
 }

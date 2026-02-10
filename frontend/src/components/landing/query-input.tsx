@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTypewriter } from "@/hooks/use-typewriter";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
@@ -81,10 +82,10 @@ export function QueryInput({ questions, onSubmit, isLoading, externalValue }: Qu
 				<Button
 					onClick={handleSend}
 					disabled={!value.trim() || isLoading}
-					isLoading={isLoading}
 					size="lg"
 					className="rounded-xl px-8"
 				>
+					{isLoading && <Loader2 className="animate-spin" />}
 					Ställ din fråga
 				</Button>
 			</div>

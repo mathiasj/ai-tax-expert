@@ -1,4 +1,4 @@
-import { integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const documentSourceEnum = pgEnum("document_source", [
 	"skatteverket",
@@ -51,8 +51,10 @@ export const documents = pgTable("documents", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	title: varchar("title", { length: 500 }).notNull(),
 	source: documentSourceEnum("source").notNull(),
+	sourceId: uuid("source_id").references(() => sources.id, { onDelete: "set null" }),
 	sourceUrl: text("source_url"),
 	filePath: text("file_path"),
+	rawContent: text("raw_content"),
 	status: documentStatusEnum("status").notNull().default("pending"),
 	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
 	errorMessage: text("error_message"),
@@ -119,6 +121,10 @@ export const sources = pgTable("sources", {
 	source: documentSourceEnum("source").notNull(),
 	label: varchar("label", { length: 255 }),
 	status: sourceStatusEnum("status").notNull().default("active"),
+	maxDocuments: integer("max_documents").notNull().default(50),
+	scrapeIntervalMinutes: integer("scrape_interval_minutes").notNull().default(10080),
+	rateLimitMs: integer("rate_limit_ms").notNull().default(2000),
+	isActive: boolean("is_active").notNull().default(true),
 	lastScrapedAt: timestamp("last_scraped_at"),
 	lastError: text("last_error"),
 	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
