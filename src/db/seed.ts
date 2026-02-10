@@ -57,6 +57,11 @@ const DEFAULT_SOURCES = [
 		source: "riksdagen" as const,
 		label: "Propositioner & SOU",
 	},
+	{
+		url: "https://data.riksdagen.se/dokumentlista/?doktyp=sfs&dokstat=g%C3%A4llande%20sfs",
+		source: "riksdagen" as const,
+		label: "Lagtext (SFS)",
+	},
 ];
 
 async function seedSources(): Promise<void> {
