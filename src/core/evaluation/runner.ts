@@ -5,6 +5,7 @@ import { executeRAGQuery } from "../rag-pipeline.js";
 import { checkFaithfulness } from "./faithfulness-checker.js";
 import { computeCitationAccuracy, computeKeywordCoverage } from "./metrics.js";
 import { scoreRelevance } from "./relevance-scorer.js";
+import { FAQ_QUESTIONS } from "./faq-questions.js";
 import { TEST_QUESTIONS } from "./test-questions.js";
 import type {
 	CategorySummary,
@@ -186,7 +187,19 @@ function printSummary(summary: EvaluationSummary): void {
 
 // CLI entry point
 if (import.meta.main) {
-	runEvaluation(undefined, { persist: true })
+	const args = process.argv.slice(2);
+	const useFaq = args.includes("--faq");
+	const useAll = args.includes("--all");
+
+	const questions = useAll
+		? [...TEST_QUESTIONS, ...FAQ_QUESTIONS]
+		: useFaq
+			? FAQ_QUESTIONS
+			: TEST_QUESTIONS;
+
+	console.log(`Running evaluation with ${questions.length} questions (${useFaq ? "FAQ" : useAll ? "all" : "default"})`);
+
+	runEvaluation(questions, { persist: true })
 		.then(() => process.exit(0))
 		.catch((err) => {
 			console.error("Evaluation failed:", err);
