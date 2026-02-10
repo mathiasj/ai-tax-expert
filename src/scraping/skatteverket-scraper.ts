@@ -61,6 +61,7 @@ export class SkatteverketScraper extends BaseScraper {
 						const doc = await this.scrapeDocument(link.url, link.title, section.name);
 						if (doc) {
 							documents.push(doc);
+							if (this.options.onDocument) await this.options.onDocument(doc);
 							this.logger.info(
 								{ title: doc.title, total: documents.length },
 								"Scraped document",

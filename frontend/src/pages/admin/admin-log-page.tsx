@@ -6,11 +6,10 @@ import { useActivity } from "@/hooks/use-admin";
 import { cn } from "@/lib/utils";
 import type { ActivityDocument } from "@/types/api";
 
-const PIPELINE_STEPS = ["pending", "downloading", "parsing", "chunking", "embedding", "indexed"] as const;
+const PIPELINE_STEPS = ["pending", "parsing", "chunking", "embedding", "indexed"] as const;
 
 const STEP_LABELS: Record<string, string> = {
 	pending: "Väntar",
-	downloading: "Hämtar",
 	parsing: "Tolkar",
 	chunking: "Delar",
 	embedding: "Bäddar in",

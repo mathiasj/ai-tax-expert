@@ -16,6 +16,8 @@ export interface ScraperOptions {
 	maxRetries: number;
 	limit?: number;
 	timeout?: number; // ms per request, default 30000
+	/** Called immediately when a document is scraped — before scrape() returns */
+	onDocument?: (doc: ScrapedDocument) => Promise<void>;
 }
 
 const defaultOptions: ScraperOptions = {

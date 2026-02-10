@@ -23,10 +23,12 @@ export const scrapeQueue = new Queue<ScrapeJob>(SCRAPE_QUEUE_NAME, {
 	connection,
 });
 
-const scraperFactories: Record<string, (limit: number) => BaseScraper> = {
-	skatteverket: (limit) => new SkatteverketScraper({ limit }),
-	lagrummet: (limit) => new LagrummetClient({ limit }),
-	riksdagen: (limit) => new RiksdagenClient({ limit }),
+type ScraperFactory = (opts: Partial<import("../scraping/base-scraper.js").ScraperOptions>) => BaseScraper;
+
+const scraperFactories: Record<string, ScraperFactory> = {
+	skatteverket: (opts) => new SkatteverketScraper(opts),
+	lagrummet: (opts) => new LagrummetClient(opts),
+	riksdagen: (opts) => new RiksdagenClient(opts),
 };
 
 const healthUrls: Record<string, string> = {
@@ -80,20 +82,16 @@ async function processScrapeJob(job: Job<ScrapeJob>): Promise<void> {
 		}
 	}
 
-	// Create scraper and run
+	// Create scraper with onDocument callback to insert DB records immediately
 	const factory = scraperFactories[target];
 	if (!factory) {
 		throw new Error(`Unknown scrape target: ${target}`);
 	}
 
-	const scraper = factory(effectiveLimit);
-	const docs = await scraper.scrape();
+	let docCount = 0;
 
-	logger.info({ target, documents: docs.length, jobId: job.id }, "Scrape job completed");
-
-	// Create DB records and queue processing for each new document
-	for (const doc of docs) {
-		if (!doc.filePath) continue;
+	const onDocument = async (doc: import("../scraping/base-scraper.js").ScrapedDocument) => {
+		if (!doc.filePath) return;
 
 		const meta = doc.metadata ?? {};
 		const source = (meta.source as string) ?? target;
@@ -123,11 +121,17 @@ async function processScrapeJob(job: Job<ScrapeJob>): Promise<void> {
 				title: doc.title,
 			});
 
+			docCount++;
 			logger.info({ documentId: created.id, title: doc.title }, "Queued document for processing");
 		} catch (err) {
 			logger.error({ title: doc.title, err }, "Failed to create document record");
 		}
-	}
+	};
+
+	const scraper = factory({ limit: effectiveLimit, onDocument });
+	await scraper.scrape();
+
+	logger.info({ target, documents: docCount, jobId: job.id }, "Scrape job completed");
 
 	// Update sources table
 	await db

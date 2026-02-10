@@ -61,6 +61,7 @@ export class RiksdagenClient extends BaseScraper {
 			try {
 				const doc = await this.fetchDocument(item);
 				documents.push(doc);
+				if (this.options.onDocument) await this.options.onDocument(doc);
 				this.logger.info({ title: doc.title, total: documents.length }, "Fetched document");
 			} catch (error) {
 				this.logger.error({ id: item.dok_id, error }, "Failed to fetch document");
