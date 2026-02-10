@@ -3,12 +3,12 @@ import { eq } from "drizzle-orm";
 import pino from "pino";
 import { env } from "../config/env.js";
 import { db } from "../db/client.js";
-import { sources } from "../db/schema.js";
+import { documents, sources } from "../db/schema.js";
 import type { BaseScraper } from "../scraping/base-scraper.js";
 import { LagrummetClient } from "../scraping/lagrummet-client.js";
 import { RiksdagenClient } from "../scraping/riksdagen-client.js";
 import { SkatteverketScraper } from "../scraping/skatteverket-scraper.js";
-import { connection } from "./queue.js";
+import { connection, documentQueue } from "./queue.js";
 
 const logger = pino({ name: "scrape-scheduler" });
 
@@ -90,6 +90,44 @@ async function processScrapeJob(job: Job<ScrapeJob>): Promise<void> {
 	const docs = await scraper.scrape();
 
 	logger.info({ target, documents: docs.length, jobId: job.id }, "Scrape job completed");
+
+	// Create DB records and queue processing for each new document
+	for (const doc of docs) {
+		if (!doc.filePath) continue;
+
+		const meta = doc.metadata ?? {};
+		const source = (meta.source as string) ?? target;
+		const docType = meta.docType as string | undefined;
+		const audience = meta.audience as string | undefined;
+		const taxArea = meta.taxArea as string | undefined;
+
+		try {
+			const [created] = await db
+				.insert(documents)
+				.values({
+					title: doc.title,
+					source: source as "skatteverket" | "lagrummet" | "riksdagen" | "manual",
+					sourceUrl: doc.sourceUrl ?? null,
+					filePath: doc.filePath,
+					status: "pending",
+					metadata: meta,
+					...(docType ? { docType: docType as "stallningstagande" } : {}),
+					...(audience ? { audience: audience as "allman" } : {}),
+					...(taxArea ? { taxArea } : {}),
+				})
+				.returning({ id: documents.id });
+
+			await documentQueue.add("process", {
+				documentId: created.id,
+				filePath: doc.filePath,
+				title: doc.title,
+			});
+
+			logger.info({ documentId: created.id, title: doc.title }, "Queued document for processing");
+		} catch (err) {
+			logger.error({ title: doc.title, err }, "Failed to create document record");
+		}
+	}
 
 	// Update sources table
 	await db

@@ -11,6 +11,7 @@ const navItems = [
 	{ to: "/admin/sources", label: "Källor", icon: "🔗", end: false },
 	{ to: "/admin/queries", label: "Frågor", icon: "💬", end: false },
 	{ to: "/admin/system", label: "System", icon: "🖥️", end: false },
+	{ to: "/admin/log", label: "Logg", icon: "📋", end: false },
 ];
 
 export function AdminSidebar({ onNavigate }: AdminSidebarProps) {

@@ -428,6 +428,41 @@ admin.get("/scrape/status", async (c) => {
 	return c.json({ statuses });
 });
 
+// ─── Activity Log ────────────────────────────────────────────
+
+admin.get("/activity", async (c) => {
+	// 50 most recently updated documents
+	const rows = await db
+		.select({
+			id: documents.id,
+			title: documents.title,
+			source: documents.source,
+			status: documents.status,
+			errorMessage: documents.errorMessage,
+			createdAt: documents.createdAt,
+			updatedAt: documents.updatedAt,
+		})
+		.from(documents)
+		.orderBy(sql`${documents.updatedAt} desc`)
+		.limit(50);
+
+	// Queue stats
+	const [docWaiting, docActive] = await Promise.all([
+		documentQueue.getWaitingCount(),
+		documentQueue.getActiveCount(),
+	]);
+	const [scrWaiting, scrActive] = await Promise.all([
+		scrapeQueue.getWaitingCount(),
+		scrapeQueue.getActiveCount(),
+	]);
+
+	return c.json({
+		documents: rows,
+		queue: { waiting: docWaiting, active: docActive },
+		scrapeQueue: { waiting: scrWaiting, active: scrActive },
+	});
+});
+
 // ─── System Health ───────────────────────────────────────────
 
 admin.get("/health", async (c) => {

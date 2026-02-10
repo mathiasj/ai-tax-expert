@@ -18,6 +18,7 @@ import { AdminDocumentsPage } from "@/pages/admin/admin-documents-page";
 import { AdminSourcesPage } from "@/pages/admin/admin-sources-page";
 import { AdminQueriesPage } from "@/pages/admin/admin-queries-page";
 import { AdminSystemPage } from "@/pages/admin/admin-system-page";
+import { AdminLogPage } from "@/pages/admin/admin-log-page";
 
 export function App() {
 	return (
@@ -57,6 +58,7 @@ export function App() {
 						<Route path="/admin/sources" element={<AdminSourcesPage />} />
 						<Route path="/admin/queries" element={<AdminQueriesPage />} />
 						<Route path="/admin/system" element={<AdminSystemPage />} />
+						<Route path="/admin/log" element={<AdminLogPage />} />
 					</Route>
 
 					<Route path="*" element={<Navigate to="/" replace />} />

@@ -14,10 +14,12 @@ COPY src/ src/
 COPY scripts/ scripts/
 COPY drizzle/ drizzle/
 
+RUN mkdir -p data/raw/riksdagen data/raw/skatteverket data/raw/lagrummet && chown -R bun:bun data
+
 USER bun
 EXPOSE 3000/tcp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 	CMD curl -f http://localhost:3000/health || exit 1
 
-ENTRYPOINT ["bun", "run", "src/index.ts"]
+CMD ["bun", "run", "src/index.ts"]

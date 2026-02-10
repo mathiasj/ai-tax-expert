@@ -50,7 +50,9 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_DB_PORT: 6333
       NODE_ENV: production
-    command: sh -c "bun run db:migrate && bun run src/index.ts"
+    volumes:
+      - raw_data:/app/data/raw
+    command: sh -c "bun run db:migrate 2>/dev/null || true; bun run src/index.ts"
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,6 +73,8 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_DB_PORT: 6333
       NODE_ENV: production
+    volumes:
+      - raw_data:/app/data/raw
     command: bun run src/workers/document-processor.ts
     depends_on:
       postgres:
@@ -111,6 +115,8 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_DB_PORT: 6333
       NODE_ENV: production
+    volumes:
+      - raw_data:/app/data/raw
     command: bun run src/workers/scrape-scheduler.ts
     depends_on:
       postgres:
@@ -125,3 +131,4 @@ volumes:
   qdrant_data:
   postgres_data:
   redis_data:
+  raw_data:

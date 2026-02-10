@@ -44,7 +44,7 @@ src/
 │   ├── queue.ts               # Shared BullMQ queue + IORedis connection (used by worker + admin routes + schedulers)
 │   ├── document-processor.ts  # BullMQ worker: parse → classify → chunk → embed → index (+ refresh support)
 │   ├── refresh-scheduler.ts   # Refresh scheduler: daily cron + manual trigger, content hash comparison
-│   └── scrape-scheduler.ts    # Scrape scheduler: BullMQ queue, health check → scrape → update sources table, weekly cron
+│   └── scrape-scheduler.ts    # Scrape scheduler: BullMQ queue, health check → scrape → create DB records → queue processing, weekly cron
 ├── core/
 │   ├── types.ts           # Shared RAG types (RetrievedChunk, RAGResponse, etc.)
 │   ├── llm/
@@ -84,7 +84,7 @@ src/
 └── index.ts               # Hono server entry point
 scripts/
 ├── scrape-all.ts          # CLI: bun run scrape --target <name> --limit <n>
-└── process-documents.ts   # CLI: bun run process (reads .meta.json for title/source)
+└── process-documents.ts   # CLI: bun run process (imports existing files on disk → DB records → queues for worker)
 frontend/
 ├── index.html, vite.config.ts, tsconfig.json
 ├── src/
@@ -130,7 +130,8 @@ frontend/
 │   │       ├── admin-documents-page.tsx  # /admin/documents — search, filter, detail drawer, CRUD
 │   │       ├── admin-sources-page.tsx    # /admin/sources — add/edit/delete source URLs
 │   │       ├── admin-queries-page.tsx    # /admin/queries — browse with feedback filter
-│   │       └── admin-system-page.tsx     # /admin/system — Qdrant/Redis/PG/BullMQ/Refresh/Scrape health
+│   │       ├── admin-system-page.tsx     # /admin/system — Qdrant/Redis/PG/BullMQ/Refresh/Scrape health
+│   │       └── admin-log-page.tsx        # /admin/log — activity log with pipeline step visualization, auto-refresh
 │   └── data/
 │       └── sample-eval-results.ts  # Static eval data for stub page
 └── public/favicon.svg
@@ -145,7 +146,7 @@ bun run frontend:build # Production build → frontend/dist/
 bun run frontend:preview # Preview production build
 bun run dev:all        # Start both backend and frontend
 bun run scrape         # Run scrapers (--target skatteverket|lagrummet|riksdagen|all --limit N --dry-run)
-bun run process        # Process raw documents → chunks → embeddings → Qdrant
+bun run process        # Import raw documents from disk → create DB records → queue for worker
 bun run worker         # Start BullMQ document processing worker
 bun run refresh-worker # Start refresh scheduler (checks for stale documents daily at 03:00)
 bun run scrape-worker  # Start scrape scheduler (scrapes sources weekly Monday 04:00)
@@ -174,7 +175,7 @@ docker compose -f docker-compose.prod.yml up -d  # Start all services (prod)
 - **LLM providers**: Factory pattern with cached singleton; switch via `LLM_PROVIDER=openai|anthropic`
 - **Worker pipeline**: download → parse → classify → chunk → embed → index (BullMQ, concurrency 2); computes SHA-256 contentHash for change detection
 - **Refresh scheduler**: BullMQ repeatable job (daily 03:00) checks documents with `refreshPolicy != "once"` and stale `lastCheckedAt`; re-queues for processing; skips unchanged content via hash comparison
-- **Scrape scheduler**: BullMQ `scrape-jobs` queue (concurrency 1); weekly cron (default Monday 04:00 via `SCRAPE_SCHEDULE_CRON`); health check → scrape → update `sources.lastScrapedAt`; admin API trigger + status; configurable via `SCRAPE_SCHEDULE_ENABLED`, `SCRAPE_DEFAULT_LIMIT`
+- **Scrape scheduler**: BullMQ `scrape-jobs` queue (concurrency 1); weekly cron (default Monday 04:00 via `SCRAPE_SCHEDULE_CRON`); health check → scrape → create DB records → queue document-processing jobs → update `sources.lastScrapedAt`; admin API trigger + status; configurable via `SCRAPE_SCHEDULE_ENABLED`, `SCRAPE_DEFAULT_LIMIT`
 - **Graceful shutdown**: `SIGTERM`/`SIGINT` handlers in `src/index.ts` close all BullMQ queues + Redis connection before exit
 - **Auth**: JWT (Hono HS256) + Bun.password (argon2id); `optionalAuth` on all `/api/*`, `requireAuth` on analytics, `requireAdmin` on `/api/admin/*`
 - **Admin**: Separate admin section (`/admin/*`) with own layout, sidebar, and route guard; admin seed user `admin@example.se`/`admin123`; BullMQ queue shared via `src/workers/queue.ts`
@@ -184,7 +185,7 @@ docker compose -f docker-compose.prod.yml up -d  # Start all services (prod)
 - **Fallbacks**: Try/catch per pipeline stage — retrieval failure → Swedish fallback, reranker failure → vector scores, LLM failure → fallback + citations
 - **Server**: Hono with `export default { port, fetch: app.fetch }` pattern for Bun
 - **User feedback**: Thumbs up/down on assistant messages; stored via `POST /api/queries/:id/feedback`; `queryId` returned from RAG pipeline
-- **Frontend routing**: React Router v7 — `/login`, `/register` public; `/chat`, `/dashboard`, `/documents`, `/evaluation`, `/settings` protected; `/admin/*` admin-only (separate layout)
+- **Frontend routing**: React Router v7 — `/login`, `/register` public; `/chat`, `/dashboard`, `/documents`, `/evaluation`, `/settings` protected; `/admin/*` admin-only (separate layout, includes `/admin/log` activity page)
 - **Frontend state**: React context (auth) + local state (chat) — no state library
 - **Frontend conversations**: localStorage-backed (no backend list endpoint); conversationId from first query response used for follow-ups
 - **Frontend theme**: Tailwind v4 dark mode via class on `<html>`, persisted in localStorage
@@ -249,6 +250,9 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 - `POST /admin/scrape/trigger` — `{ target: "skatteverket"|"lagrummet"|"riksdagen", limit? }` → `{ jobId }`
 - `GET /admin/scrape/status` — per-target queue stats (waiting, active, completed, failed, lastCompleted)
 
+#### Activity Log
+- `GET /admin/activity` — 50 most recent documents (sorted updatedAt DESC) + BullMQ queue stats (document-processing + scrape-jobs: waiting, active)
+
 #### System Health
 - `GET /admin/health` — Qdrant stats, BullMQ queue counts, refresh/scrape scheduler stats, Redis ping, documents by status/source, total chunks
 
@@ -269,6 +273,7 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 **Phase 5: COMPLETE** — Admin dashboard: separate admin layout/sidebar/routes (`/admin/*`), documents CRUD (search/filter/detail drawer/delete/reprocess/mark superseded), sources CRUD (add/edit status/delete URLs), queries browser (feedback filter, expandable answers, feedback stats), system health monitoring (Qdrant/Redis/PG/BullMQ auto-refresh), user feedback (thumbs up/down in chat, stored per query), `requireAdmin` middleware, admin seed user, `sources` table, superseded/feedback fields on documents/queries
 **Phase 7: COMPLETE** — Metadata-enriched pipeline: `docType`/`audience`/`taxArea` enums + columns on documents table, auto-classification via `classifier.ts`, scrapers emit structured metadata, worker passes rich metadata to Qdrant, context assembler shows Swedish docType labels, system prompt with source hierarchy (lagtext > rättsfall > ställningstaganden > handledningar), new Qdrant filters (docType/audience/taxArea), query API supports new filter fields, content hash (SHA-256) for change detection, refresh scheduler (daily cron + manual trigger), admin refresh endpoint + UI
 **Phase 8: COMPLETE** — Production deploy + scheduled scraping: Dockerfile fixed (bun.lock, multi-stage, healthcheck), `.dockerignore`, `docker-compose.prod.yml` (backend/worker/refresh-worker/scrape-worker), graceful shutdown (SIGTERM/SIGINT), BullMQ scrape scheduler (`scrape-jobs` queue, weekly cron, admin trigger/status API), scrape scheduler UI (system health card, per-source scrape button), GitHub Actions CI (lint + Docker build)
+**Phase 9: COMPLETE** — Activity log + pipeline fixes: admin log page (`/admin/log`) with pipeline step visualization (pending→downloading→parsing→chunking→embedding→indexed), auto-refresh every 5s, queue summary cards; scrape scheduler now creates DB records and queues processing jobs after scraping; `bun run process` rewritten to import existing files into DB + queue for worker; shared Docker volume (`raw_data`) for scraped files across containers; Dockerfile `ENTRYPOINT` → `CMD` fix
 
 ## Known Issues
 
@@ -280,6 +285,9 @@ All endpoints under `/api/admin/` require `requireAdmin` middleware.
 - Vite 6 required (not v7) — Node 20.9.0 lacks `crypto.hash` needed by Vite 7
 - `@types/react` must be v18.x to match React 18 (not v19)
 - Frontend stub pages (documents, evaluation) need backend endpoints: `GET /api/documents`, `GET /api/eval/results/latest`, `PATCH /api/auth/me`
+- Dockerfile uses `CMD` (not `ENTRYPOINT`) so docker-compose `command:` overrides work correctly
+- Docker prod requires shared `raw_data` volume for scraped files — backend (scrape worker) writes, worker (document processor) reads
+- `drizzle-kit` is a devDependency, not available in prod image — `db:migrate` in docker-compose command has `|| true` fallback
 
 ## Conventions
 

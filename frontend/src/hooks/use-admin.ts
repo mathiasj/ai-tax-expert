@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import type {
+	ActivityResponse,
 	AdminChunksResponse,
 	AdminDocumentDetail,
 	AdminQueriesResponse,
@@ -11,6 +12,32 @@ import type {
 	ScrapeStatusResponse,
 	SystemHealth,
 } from "@/types/api";
+
+// ─── Activity Log ────────────────────────────────────────────
+
+export function useActivity(refreshInterval = 5000) {
+	const [data, setData] = useState<ActivityResponse | null>(null);
+	const [isLoading, setIsLoading] = useState(true);
+
+	const fetch = useCallback(async () => {
+		try {
+			const result = await api.get<ActivityResponse>("/api/admin/activity");
+			setData(result);
+		} catch {
+			// keep previous data on error
+		} finally {
+			setIsLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		fetch();
+		const interval = setInterval(fetch, refreshInterval);
+		return () => clearInterval(interval);
+	}, [fetch, refreshInterval]);
+
+	return { data, isLoading, refetch: fetch };
+}
 
 // ─── Documents ───────────────────────────────────────────────
 

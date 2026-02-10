@@ -1,11 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, extname, basename, dirname } from "node:path";
-import { parsePdf, parseTextFile } from "../src/processing/pdf-parser.js";
-import { chunkDocument } from "../src/processing/chunker.js";
-import { embedTexts } from "../src/processing/embedder.js";
-import { indexPoints, type IndexPoint } from "../src/processing/indexer.js";
-import { classifyDocType, classifyAudience, detectTaxArea } from "../src/processing/classifier.js";
-import { v4 as uuidv4 } from "uuid";
+import { eq } from "drizzle-orm";
+import { db } from "../src/db/client.js";
+import { documents } from "../src/db/schema.js";
+import { documentQueue } from "../src/workers/queue.js";
 
 const RAW_DIR = "data/raw";
 
@@ -56,80 +54,79 @@ async function loadMetadata(filePath: string): Promise<FileMeta> {
 	}
 }
 
+const VALID_SOURCES = ["skatteverket", "lagrummet", "riksdagen", "manual"] as const;
+type ValidSource = (typeof VALID_SOURCES)[number];
+
+function isValidSource(s: string): s is ValidSource {
+	return VALID_SOURCES.includes(s as ValidSource);
+}
+
 async function main() {
-	console.log("Starting document processing pipeline...");
+	console.log("Importing documents from disk into database...");
 
 	const files = await collectFiles(RAW_DIR);
-	console.log(`Found ${files.length} documents to process`);
+	console.log(`Found ${files.length} files on disk`);
 
 	if (files.length === 0) {
 		console.log("No documents found. Run 'bun run scrape' first.");
 		return;
 	}
 
+	// Check which files already have DB records (by filePath)
+	const existingDocs = await db
+		.select({ filePath: documents.filePath })
+		.from(documents);
+	const existingPaths = new Set(existingDocs.map((d) => d.filePath));
+
+	let created = 0;
+	let skipped = 0;
+
 	for (const filePath of files) {
-		const documentId = uuidv4();
-		console.log(`\nProcessing: ${filePath}`);
+		if (existingPaths.has(filePath)) {
+			skipped++;
+			continue;
+		}
 
 		try {
-			// 0. Load metadata
 			const meta = await loadMetadata(filePath);
-			console.log(`  Source: ${meta.source}, Title: ${meta.title.slice(0, 60)}`);
+			const source = isValidSource(meta.source) ? meta.source : "manual";
+			const docType = meta.docType as string | undefined;
+			const audience = meta.audience as string | undefined;
+			const taxArea = meta.taxArea as string | undefined;
 
-			// 1. Parse
-			const ext = extname(filePath).toLowerCase();
-			const parsed = ext === ".pdf" ? await parsePdf(filePath) : await parseTextFile(filePath);
+			const [doc] = await db
+				.insert(documents)
+				.values({
+					title: meta.title,
+					source,
+					sourceUrl: meta.sourceUrl || null,
+					filePath,
+					status: "pending",
+					metadata: meta,
+					...(docType ? { docType: docType as "stallningstagande" } : {}),
+					...(audience ? { audience: audience as "allman" } : {}),
+					...(taxArea ? { taxArea } : {}),
+				})
+				.returning({ id: documents.id });
 
-			if (!parsed.text || parsed.text.length < 50) {
-				console.log(`  Skipping (too short): ${parsed.text.length} chars`);
-				continue;
-			}
-
-			console.log(`  Parsed: ${parsed.text.length} chars, ${parsed.pageCount} pages`);
-
-			// 1b. Auto-classify if not already set in metadata
-			const docType = (meta.docType as string) ?? classifyDocType(meta.source, meta);
-			const audience = (meta.audience as string) ?? classifyAudience(meta.source, meta);
-			const taxArea = (meta.taxArea as string) ?? detectTaxArea(meta.title, parsed.text.slice(0, 2000));
-
-			console.log(`  Classification: docType=${docType}, audience=${audience}, taxArea=${taxArea ?? "none"}`);
-
-			// 2. Chunk — include all metadata
-			const enrichedMeta: Record<string, unknown> = {
-				...parsed.metadata,
-				...meta,
+			await documentQueue.add("process", {
+				documentId: doc.id,
 				filePath,
-				docType,
-				audience,
-			};
-			if (taxArea) enrichedMeta.taxArea = taxArea;
+				title: meta.title,
+			});
 
-			const chunks = await chunkDocument(parsed.text, enrichedMeta);
-			console.log(`  Chunked: ${chunks.length} chunks`);
-
-			// 3. Embed
-			const texts = chunks.map((c) => c.content);
-			const embeddings = await embedTexts(texts);
-			console.log(`  Embedded: ${embeddings.length} vectors`);
-
-			// 4. Index
-			const points: IndexPoint[] = chunks.map((chunk, i) => ({
-				chunk,
-				embedding: embeddings[i].embedding,
-				documentId,
-			}));
-
-			const ids = await indexPoints(points);
-			console.log(`  Indexed: ${ids.length} points in Qdrant`);
+			created++;
+			console.log(`  Queued: ${meta.title.slice(0, 60)} (${source})`);
 		} catch (error) {
-			console.error(`  Failed to process ${filePath}:`, error);
+			console.error(`  Failed: ${filePath}`, error);
 		}
 	}
 
-	console.log("\nProcessing complete.");
+	console.log(`\nDone: ${created} queued for processing, ${skipped} already in DB`);
+	process.exit(0);
 }
 
 main().catch((error) => {
-	console.error("Processing failed:", error);
+	console.error("Import failed:", error);
 	process.exit(1);
 });

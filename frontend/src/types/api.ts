@@ -148,6 +148,24 @@ export interface UpdateProfileResponse {
 	user: UserInfo;
 }
 
+// ─── Activity Log ────────────────────────────────────────────
+
+export interface ActivityDocument {
+	id: string;
+	title: string;
+	source: string;
+	status: string;
+	errorMessage: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface ActivityResponse {
+	documents: ActivityDocument[];
+	queue: { waiting: number; active: number };
+	scrapeQueue: { waiting: number; active: number };
+}
+
 // ─── Admin Types ─────────────────────────────────────────────
 
 export interface AdminDocumentDetail {
