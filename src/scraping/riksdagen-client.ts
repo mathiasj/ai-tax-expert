@@ -79,13 +79,30 @@ export class RiksdagenClient extends BaseScraper {
 	}
 
 	private async searchTaxLaws(limit: number): Promise<RiksdagenDocument[]> {
-		return this.searchDocuments({
-			sok: "skatt",
-			doktyp: "sfs",
-			dokstat: "gällande sfs",
-			sort: "rel",
-			limit,
-		});
+		// Multiple searches to maximize coverage — API treats "+" as AND, so we search per term
+		const searchTerms = ["skatt", "avgift", "avdrag", "tull", "taxering"];
+		const seen = new Set<string>();
+		const all: RiksdagenDocument[] = [];
+
+		for (const term of searchTerms) {
+			const perTermLimit = Math.ceil(limit / searchTerms.length);
+			const results = await this.searchDocuments({
+				sok: term,
+				doktyp: "sfs",
+				dokstat: "gällande sfs",
+				sort: "rel",
+				limit: perTermLimit,
+			});
+			for (const doc of results) {
+				if (!seen.has(doc.dok_id)) {
+					seen.add(doc.dok_id);
+					all.push(doc);
+				}
+			}
+		}
+
+		this.logger.info({ terms: searchTerms.length, unique: all.length }, "SFS search complete (deduplicated)");
+		return all;
 	}
 
 	private async searchDocuments(params: {
