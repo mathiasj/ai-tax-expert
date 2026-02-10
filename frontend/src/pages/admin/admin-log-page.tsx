@@ -35,6 +35,19 @@ function relativeTime(dateStr: string): string {
 	return `${days}d sedan`;
 }
 
+function pipelineDuration(createdAt: string, updatedAt: string): string | null {
+	const start = new Date(createdAt).getTime();
+	const end = new Date(updatedAt).getTime();
+	const diffMs = end - start;
+	if (diffMs < 0) return null;
+	if (diffMs < 1000) return `${diffMs}ms`;
+	const seconds = Math.floor(diffMs / 1000);
+	if (seconds < 60) return `${seconds}s`;
+	const minutes = Math.floor(seconds / 60);
+	const remainSec = seconds % 60;
+	return `${minutes}m ${remainSec}s`;
+}
+
 function sourceBadgeVariant(source: string): "default" | "success" | "warning" | "danger" | "info" {
 	switch (source) {
 		case "skatteverket":
@@ -114,7 +127,7 @@ function DocumentRow({ doc }: { doc: ActivityDocument }) {
 	return (
 		<div
 			className={cn(
-				"flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between",
+				"flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-start sm:justify-between",
 				isFailed
 					? "border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20"
 					: "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900",
@@ -140,12 +153,28 @@ function DocumentRow({ doc }: { doc: ActivityDocument }) {
 				) : (
 					<PipelineSteps status={doc.status} />
 				)}
+
+				{doc.sourceUrl && (
+					<a
+						href={doc.sourceUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="block truncate text-xs text-blue-500 hover:text-blue-600 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+					>
+						{doc.sourceUrl}
+					</a>
+				)}
 			</div>
 
-			<div className="shrink-0 text-right">
+			<div className="shrink-0 text-right space-y-0.5">
 				<span className="text-xs text-gray-400 dark:text-gray-500">
 					{relativeTime(doc.updatedAt)}
 				</span>
+				{(doc.status === "indexed" || isFailed) && pipelineDuration(doc.createdAt, doc.updatedAt) && (
+					<div className="text-[10px] text-gray-400 dark:text-gray-500">
+						⏱ {pipelineDuration(doc.createdAt, doc.updatedAt)}
+					</div>
+				)}
 			</div>
 		</div>
 	);

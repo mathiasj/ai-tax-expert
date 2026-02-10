@@ -437,6 +437,7 @@ admin.get("/activity", async (c) => {
 			id: documents.id,
 			title: documents.title,
 			source: documents.source,
+			sourceUrl: documents.sourceUrl,
 			status: documents.status,
 			errorMessage: documents.errorMessage,
 			createdAt: documents.createdAt,

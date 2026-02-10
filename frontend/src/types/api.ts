@@ -154,6 +154,7 @@ export interface ActivityDocument {
 	id: string;
 	title: string;
 	source: string;
+	sourceUrl: string | null;
 	status: string;
 	errorMessage: string | null;
 	createdAt: string;
