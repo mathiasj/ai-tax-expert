@@ -139,20 +139,35 @@ export class RiksdagenClient extends BaseScraper {
 		);
 	}
 
+	private buildSourceUrl(item: RiksdagenDocument): string {
+		const typeMap: Record<string, string> = {
+			sfs: "svensk-forfattningssamling",
+			prop: "proposition",
+			sou: "statens-offentliga-utredningar",
+		};
+		const category = typeMap[item.doktyp.toLowerCase()] ?? item.doktyp.toLowerCase();
+		return `https://www.riksdagen.se/sv/dokument-och-lagar/dokument/${category}/_${item.dok_id}/`;
+	}
+
 	private async fetchDocument(item: RiksdagenDocument): Promise<ScrapedDocument> {
 		// Try to get HTML version first via the document content API
 		const htmlUrl = `${BASE_URL}/dokument/${item.dok_id}/json`;
+		const sourceUrl = this.buildSourceUrl(item);
 
 		try {
 			const response = await this.fetchWithRetry(htmlUrl);
 			const data = await response.json();
 			const htmlContent = data?.dokumentstatus?.dokument?.html ?? data?.html ?? "";
+			const textContent = (data?.dokumentstatus?.dokument?.text ?? "").trim();
 
-			if (htmlContent) {
+			if (htmlContent || textContent) {
+				const content = htmlContent ? stripHtml(htmlContent) : textContent;
+				if (content.length < 50) {
+					this.logger.warn({ id: item.dok_id, chars: content.length }, "Skipping document with too little content");
+					throw new Error(`Too little content for ${item.dok_id} (${content.length} chars)`);
+				}
 				const filename = `${item.doktyp}_${item.dok_id}.txt`;
-				const content = stripHtml(htmlContent);
 				const filePath = await this.saveFile(filename, content);
-				const sourceUrl = `https://www.riksdagen.se/sv/dokument-och-lagar/${item.dok_id}/`;
 				const docType = item.doktyp.toLowerCase() === "prop" ? "proposition"
 					: item.doktyp.toLowerCase() === "sou" ? "sou"
 					: item.doktyp.toLowerCase() === "sfs" ? "lagtext"
@@ -201,7 +216,7 @@ export class RiksdagenClient extends BaseScraper {
 				: "ovrigt";
 			await this.saveMetadata(filePath, {
 				title: item.titel,
-				sourceUrl: pdfAttachment.fil_url,
+				sourceUrl,
 				source: "riksdagen",
 				docId: item.dok_id,
 				doktyp: item.doktyp,
@@ -212,7 +227,7 @@ export class RiksdagenClient extends BaseScraper {
 
 			return {
 				title: item.titel,
-				sourceUrl: pdfAttachment.fil_url,
+				sourceUrl,
 				filePath,
 				metadata: {
 					source: "riksdagen",

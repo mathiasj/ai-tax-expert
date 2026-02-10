@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import pino from "pino";
 
 export interface ScrapedDocument {
@@ -112,7 +112,7 @@ export abstract class BaseScraper {
 	}
 
 	protected async saveFile(filename: string, data: Buffer | string): Promise<string> {
-		const dir = this.options.outputDir;
+		const dir = resolve(this.options.outputDir);
 		await mkdir(dir, { recursive: true });
 		const filePath = join(dir, filename);
 		await writeFile(filePath, data);

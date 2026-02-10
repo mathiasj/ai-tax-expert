@@ -1,4 +1,4 @@
-import { and, count, eq, ilike, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import IORedis from "ioredis";
 import pino from "pino";
@@ -13,6 +13,25 @@ import { scrapeQueue, triggerScrape } from "../../workers/scrape-scheduler.js";
 import { requireAdmin } from "../middleware/admin.js";
 
 const logger = pino({ name: "admin-api" });
+
+const DOKTYP_TO_DOCTYPE: Record<string, string> = {
+	sfs: "lagtext",
+	prop: "proposition",
+	sou: "sou",
+};
+
+/** Parse riksdagen URL doktyp param to map to document docType values. */
+function inferDocTypesFromUrl(url: string): string[] | null {
+	try {
+		const parsed = new URL(url);
+		const doktyp = parsed.searchParams.get("doktyp");
+		if (!doktyp) return null;
+		const mapped = doktyp.split(",").map((t) => DOKTYP_TO_DOCTYPE[t.trim()]).filter(Boolean);
+		return mapped.length > 0 ? mapped : null;
+	} catch {
+		return null;
+	}
+}
 
 const admin = new Hono();
 
@@ -209,13 +228,17 @@ admin.get("/sources", async (c) => {
 		db.select({ count: count() }).from(sources).where(where),
 	]);
 
-	// Get document counts per source name (skatteverket, riksdagen, etc.)
+	// Get document counts per source, using URL doktyp to distinguish sub-types
 	const enriched = await Promise.all(
 		rows.map(async (s) => {
+			const docTypes = inferDocTypesFromUrl(s.url);
+			const conditions = [eq(documents.source, s.source)];
+			if (docTypes) conditions.push(inArray(documents.docType, docTypes));
+
 			const [docCount] = await db
 				.select({ count: count() })
 				.from(documents)
-				.where(eq(documents.source, s.source));
+				.where(and(...conditions));
 			return { ...s, documentCount: docCount.count };
 		}),
 	);

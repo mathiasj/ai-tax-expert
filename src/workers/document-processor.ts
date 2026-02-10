@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { Worker, type Job } from "bullmq";
 import pino from "pino";
 import { eq } from "drizzle-orm";
@@ -34,8 +35,9 @@ function computeContentHash(text: string): string {
 }
 
 async function processDocument(job: Job<DocumentJob>): Promise<void> {
-	const { documentId, filePath, title } = job.data;
-	logger.info({ documentId, title }, "Processing document");
+	const { documentId, filePath: rawPath, title } = job.data;
+	const filePath = resolve(rawPath);
+	logger.info({ documentId, title, filePath }, "Processing document");
 
 	try {
 		// Fetch full document record from DB for metadata
