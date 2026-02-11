@@ -151,7 +151,7 @@ async function processDocument(job: Job<DocumentJob>): Promise<void> {
 
 const worker = new Worker<DocumentJob>(QUEUE_NAME, processDocument, {
 	connection,
-	concurrency: 2,
+	concurrency: 1,
 });
 
 worker.on("completed", (job) => {
