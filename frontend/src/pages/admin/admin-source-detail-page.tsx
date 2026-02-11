@@ -374,9 +374,8 @@ export function AdminSourceDetailPage() {
 							<thead className="border-b bg-muted/50">
 								<tr>
 									<th className="px-4 py-3 font-medium text-muted-foreground">Titel</th>
-									<th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
-									<th className="px-4 py-3 font-medium text-muted-foreground">Tid</th>
-									<th className="px-4 py-3 font-medium text-muted-foreground">Käll-URL</th>
+									<th className="whitespace-nowrap px-4 py-3 font-medium text-muted-foreground">Status</th>
+									<th className="whitespace-nowrap px-4 py-3 font-medium text-muted-foreground">Tid</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -389,8 +388,13 @@ export function AdminSourceDetailPage() {
 											setChunkPage(1);
 										}}
 									>
-										<td className="max-w-xs truncate px-4 py-3 text-foreground">
-											{doc.title}
+										<td className="px-4 py-3">
+											<div className="max-w-[700px] space-y-0.5">
+												<div className="line-clamp-2 text-foreground">{doc.title}</div>
+												{doc.sourceUrl && (
+													<div className="truncate text-xs text-muted-foreground">{doc.sourceUrl}</div>
+												)}
+											</div>
 										</td>
 										<td className="px-4 py-3">
 											{doc.status === "failed" ? (
@@ -412,14 +416,11 @@ export function AdminSourceDetailPage() {
 													</div>
 												)}
 										</td>
-										<td className="max-w-[200px] truncate px-4 py-3 text-xs text-muted-foreground">
-											{doc.sourceUrl ?? "-"}
-										</td>
 									</tr>
 								))}
 								{activity?.documents.length === 0 && (
 									<tr>
-										<td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+										<td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
 											Inga dokument för denna källa
 										</td>
 									</tr>

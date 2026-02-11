@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,7 +29,6 @@ import {
 	useCreateSource,
 	useDeleteSource,
 	useSources,
-	useTriggerScrape,
 } from "@/hooks/use-admin";
 import { formatDate } from "@/lib/utils";
 
@@ -110,22 +109,8 @@ export function AdminSourcesPage() {
 
 	const { create, isLoading: creating } = useCreateSource();
 	const { deleteSource, isLoading: deleting } = useDeleteSource();
-	const { trigger: triggerScrape } = useTriggerScrape();
-	const [scrapingSourceId, setScrapingSourceId] = useState<string | null>(null);
 	const [showReset, setShowReset] = useState(false);
 	const [resetting, setResetting] = useState(false);
-	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-	// Auto-refresh while scraping
-	useEffect(() => {
-		if (scrapingSourceId) {
-			pollRef.current = setInterval(refetch, 5000);
-			return () => {
-				if (pollRef.current) clearInterval(pollRef.current);
-			};
-		}
-		if (pollRef.current) clearInterval(pollRef.current);
-	}, [scrapingSourceId, refetch]);
 
 	const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
@@ -149,17 +134,6 @@ export function AdminSourcesPage() {
 		if (ok) {
 			setDeleteId(null);
 			refetch();
-		}
-	};
-
-	const handleScrape = async (sourceId: string) => {
-		setScrapingSourceId(sourceId);
-		const ok = await triggerScrape(sourceId);
-		if (ok) {
-			setTimeout(refetch, 2000);
-			setTimeout(() => setScrapingSourceId(null), 5 * 60 * 1000);
-		} else {
-			setScrapingSourceId(null);
 		}
 	};
 
@@ -231,16 +205,7 @@ export function AdminSourcesPage() {
 									</td>
 									<td className="px-4 py-3 text-muted-foreground">{src.documentCount}</td>
 									<td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-										{scrapingSourceId === src.id ? (
-											<span className="flex items-center gap-2 text-primary">
-												<Spinner size="sm" />
-												Skrapar...
-											</span>
-										) : src.lastScrapedAt ? (
-											formatDate(src.lastScrapedAt)
-										) : (
-											"-"
-										)}
+										{src.lastScrapedAt ? formatDate(src.lastScrapedAt) : "-"}
 									</td>
 								</tr>
 							))}
