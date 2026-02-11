@@ -1,5 +1,7 @@
-import { existsSync } from "node:fs";
 import * as cheerio from "cheerio";
+import { eq } from "drizzle-orm";
+import { db } from "../db/client.js";
+import { documents } from "../db/schema.js";
 import { BaseScraper, type ScrapedDocument, type ScraperOptions } from "./base-scraper.js";
 
 // Riksdagen Open Data API
@@ -24,7 +26,7 @@ export class RiksdagenClient extends BaseScraper {
 	}
 
 	async scrape(): Promise<ScrapedDocument[]> {
-		const documents: ScrapedDocument[] = [];
+		const scraped: ScrapedDocument[] = [];
 		const limit = this.options.limit ?? 50;
 
 		// Determine which document types to fetch based on doktyp config
@@ -37,7 +39,7 @@ export class RiksdagenClient extends BaseScraper {
 			this.logger.info("Fetching tax-related propositions from Riksdagen");
 			try {
 				const results = await this.searchTaxPropositions(limit);
-				await this.fetchResults(results, documents);
+				await this.fetchResults(results, scraped);
 			} catch (error) {
 				this.logger.error({ error }, "Failed to search propositions");
 			}
@@ -47,30 +49,37 @@ export class RiksdagenClient extends BaseScraper {
 			this.logger.info("Fetching tax-related SFS (lagtext) from Riksdagen");
 			try {
 				const results = await this.searchTaxLaws(limit);
-				await this.fetchResults(results, documents);
+				await this.fetchResults(results, scraped);
 			} catch (error) {
 				this.logger.error({ error }, "Failed to search SFS");
 			}
 		}
 
-		this.logger.info({ total: documents.length, doktyp: doktyp ?? "all" }, "Riksdagen scraping complete");
-		return documents;
+		this.logger.info({ total: scraped.length, doktyp: doktyp ?? "all" }, "Riksdagen scraping complete");
+		return scraped;
 	}
 
-	private async fetchResults(results: RiksdagenDocument[], documents: ScrapedDocument[]): Promise<void> {
+	private async fetchResults(results: RiksdagenDocument[], scraped: ScrapedDocument[]): Promise<void> {
+		// Build set of already-known dok_ids from the database
+		const existingDocs = await db
+			.select({ sourceUrl: documents.sourceUrl })
+			.from(documents)
+			.where(eq(documents.source, "riksdagen"));
+		const existingUrls = new Set(existingDocs.map((d) => d.sourceUrl).filter(Boolean));
+
 		for (const item of results) {
-			const txtPath = `${this.options.outputDir}/${item.doktyp}_${item.dok_id}.txt`;
-			const pdfPath = `${this.options.outputDir}/${item.doktyp}_${item.dok_id}.pdf`;
-			if (existsSync(txtPath) || existsSync(pdfPath)) {
+			const sourceUrl = this.buildSourceUrl(item);
+			if (existingUrls.has(sourceUrl)) {
 				this.logger.info({ id: item.dok_id }, "Skipping already-scraped document");
 				continue;
 			}
 
 			try {
 				const doc = await this.fetchDocument(item);
-				documents.push(doc);
+				scraped.push(doc);
+				existingUrls.add(sourceUrl); // prevent re-scraping within same run
 				if (this.options.onDocument) await this.options.onDocument(doc);
-				this.logger.info({ title: doc.title, total: documents.length }, "Fetched document");
+				this.logger.info({ title: doc.title, total: scraped.length }, "Fetched document");
 			} catch (error) {
 				this.logger.error({ id: item.dok_id, error }, "Failed to fetch document");
 			}
