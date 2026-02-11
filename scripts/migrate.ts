@@ -177,6 +177,7 @@ try {
 	await addColumnIfMissing("sources", "is_active", "boolean DEFAULT true NOT NULL");
 
 	// Documents columns
+	await addColumnIfMissing("documents", "raw_content", "text");
 	await addColumnIfMissing("documents", "source_id", "uuid REFERENCES sources(id) ON DELETE SET NULL");
 	await addColumnIfMissing("documents", "doc_type", '"doc_type"');
 	await addColumnIfMissing("documents", "audience", '"audience"');
