@@ -116,9 +116,24 @@ async function processScrapeJob(job: Job<ScrapeJob>): Promise<void> {
 	}
 
 	let docCount = 0;
+	let skippedCount = 0;
+
+	// Pre-load existing sourceUrls for this source to avoid duplicates across runs
+	const existingDocs = await db
+		.select({ sourceUrl: documents.sourceUrl })
+		.from(documents)
+		.where(eq(documents.sourceId, sourceId));
+	const existingUrls = new Set(existingDocs.map((d) => d.sourceUrl).filter(Boolean));
 
 	const onDocument = async (doc: import("../scraping/base-scraper.js").ScrapedDocument) => {
 		if (!doc.filePath) return;
+
+		// Dedup: skip if sourceUrl already exists for this source
+		if (doc.sourceUrl && existingUrls.has(doc.sourceUrl)) {
+			skippedCount++;
+			logger.info({ title: doc.title, sourceUrl: doc.sourceUrl }, "Skipping duplicate document");
+			return;
+		}
 
 		const meta = doc.metadata ?? {};
 		const docSource = (meta.source as string) ?? target;
@@ -152,6 +167,7 @@ async function processScrapeJob(job: Job<ScrapeJob>): Promise<void> {
 			});
 
 			docCount++;
+			if (doc.sourceUrl) existingUrls.add(doc.sourceUrl);
 			logger.info({ documentId: created.id, title: doc.title, sourceId }, "Queued document for processing");
 		} catch (err) {
 			logger.error({ title: doc.title, err }, "Failed to create document record");
@@ -179,7 +195,7 @@ async function processScrapeJob(job: Job<ScrapeJob>): Promise<void> {
 		logger.error({ sourceId, target, error: msg }, "Scraper threw an error");
 	}
 
-	logger.info({ sourceId, target, documents: docCount, jobId: job.id }, "Scrape job completed");
+	logger.info({ sourceId, target, documents: docCount, skipped: skippedCount, jobId: job.id }, "Scrape job completed");
 
 	// Update the specific source row
 	await db

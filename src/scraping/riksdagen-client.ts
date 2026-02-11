@@ -1,7 +1,4 @@
 import * as cheerio from "cheerio";
-import { eq } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { documents } from "../db/schema.js";
 import { BaseScraper, type ScrapedDocument, type ScraperOptions } from "./base-scraper.js";
 
 // Riksdagen Open Data API
@@ -60,24 +57,10 @@ export class RiksdagenClient extends BaseScraper {
 	}
 
 	private async fetchResults(results: RiksdagenDocument[], scraped: ScrapedDocument[]): Promise<void> {
-		// Build set of already-known dok_ids from the database
-		const existingDocs = await db
-			.select({ sourceUrl: documents.sourceUrl })
-			.from(documents)
-			.where(eq(documents.source, "riksdagen"));
-		const existingUrls = new Set(existingDocs.map((d) => d.sourceUrl).filter(Boolean));
-
 		for (const item of results) {
-			const sourceUrl = this.buildSourceUrl(item);
-			if (existingUrls.has(sourceUrl)) {
-				this.logger.info({ id: item.dok_id }, "Skipping already-scraped document");
-				continue;
-			}
-
 			try {
 				const doc = await this.fetchDocument(item);
 				scraped.push(doc);
-				existingUrls.add(sourceUrl); // prevent re-scraping within same run
 				if (this.options.onDocument) await this.options.onDocument(doc);
 				this.logger.info({ title: doc.title, total: scraped.length }, "Fetched document");
 			} catch (error) {
