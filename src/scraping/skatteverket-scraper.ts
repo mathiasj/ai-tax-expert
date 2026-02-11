@@ -73,6 +73,11 @@ export class SkatteverketScraper extends BaseScraper {
 				}
 			} catch (error) {
 				this.logger.error({ section: section.name, error }, "Failed to scrape section");
+				// Re-throw billing/credit errors so the scheduler can store them
+				const errMsg = error instanceof Error ? error.message : String(error);
+				if (errMsg.includes("402") || errMsg.includes("Insufficient credits")) {
+					throw error;
+				}
 			}
 		}
 

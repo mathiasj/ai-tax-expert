@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { useSources, useSystemHealth, useTriggerScrape } from "@/hooks/use-admin";
+import { useFirecrawlCredits, useSources, useSystemHealth, useTriggerScrape } from "@/hooks/use-admin";
 import { api } from "@/lib/api-client";
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -43,6 +43,7 @@ function ServiceCard({
 export function AdminSystemPage() {
 	const { data, isLoading, refetch } = useSystemHealth();
 	const { data: sourcesData } = useSources({ limit: 200 });
+	const { data: firecrawlData } = useFirecrawlCredits();
 	const [refreshing, setRefreshing] = useState(false);
 	const [scraping, setScraping] = useState(false);
 	const { trigger: triggerScrape } = useTriggerScrape();
@@ -180,6 +181,50 @@ export function AdminSystemPage() {
 						<p className="text-red-500">{data?.scrapeScheduler?.error ?? "Ej konfigurerad"}</p>
 					)}
 				</ServiceCard>
+				{/* Firecrawl Credits */}
+				{firecrawlData && firecrawlData.status !== "not_configured" && (
+					<ServiceCard
+						title="Firecrawl"
+						status={firecrawlData.status === "ok" && (firecrawlData.remainingCredits ?? 0) > 0 ? "ok" : "error"}
+					>
+						{firecrawlData.status === "ok" ? (
+							<>
+								<p>
+									Credits:{" "}
+									<span className={`font-medium ${(firecrawlData.remainingCredits ?? 0) <= 0 ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100"}`}>
+										{firecrawlData.remainingCredits?.toLocaleString()}
+									</span>
+									<span className="text-gray-400"> / {firecrawlData.planCredits?.toLocaleString()}</span>
+								</p>
+								{firecrawlData.remainingCredits != null && firecrawlData.planCredits != null && firecrawlData.planCredits > 0 && (
+									<div className="mt-2">
+										<div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+											<div
+												className={`h-2 rounded-full ${(firecrawlData.remainingCredits / firecrawlData.planCredits) > 0.2 ? "bg-green-500" : (firecrawlData.remainingCredits / firecrawlData.planCredits) > 0.05 ? "bg-yellow-500" : "bg-red-500"}`}
+												style={{ width: `${Math.max(0, Math.min(100, (firecrawlData.remainingCredits / firecrawlData.planCredits) * 100))}%` }}
+											/>
+										</div>
+									</div>
+								)}
+								{firecrawlData.billingPeriodEnd && (
+									<p className="mt-1">
+										Förnyas:{" "}
+										<span className="font-medium text-gray-900 dark:text-gray-100">
+											{new Date(firecrawlData.billingPeriodEnd).toLocaleDateString("sv-SE")}
+										</span>
+									</p>
+								)}
+								{(firecrawlData.remainingCredits ?? 0) <= 0 && (
+									<p className="mt-2 text-sm font-medium text-red-600 dark:text-red-400">
+										Inga credits kvar — Skatteverket-skrapning blockerad
+									</p>
+								)}
+							</>
+						) : (
+							<p className="text-red-500">{firecrawlData.error}</p>
+						)}
+					</ServiceCard>
+				)}
 			</div>
 
 			{/* Document stats */}

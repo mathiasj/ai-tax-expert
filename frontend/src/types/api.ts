@@ -280,6 +280,15 @@ export interface ScrapeStatusResponse {
 	statuses: ScrapeStatus[];
 }
 
+export interface FirecrawlCredits {
+	status: string;
+	remainingCredits?: number;
+	planCredits?: number;
+	billingPeriodStart?: string;
+	billingPeriodEnd?: string;
+	error?: string;
+}
+
 export interface SystemHealth {
 	qdrant: { status: string; pointsCount?: number; vectorsCount?: number; segmentsCount?: number; error?: string };
 	redis: { status: string; latencyMs?: number; error?: string };

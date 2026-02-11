@@ -10,6 +10,7 @@ import type {
 	AdminSourcesResponse,
 	DocumentsResponse,
 	FeedbackStats,
+	FirecrawlCredits,
 	ScrapeStatusResponse,
 	SystemHealth,
 } from "@/types/api";
@@ -430,6 +431,30 @@ export function useTriggerScrape() {
 	};
 
 	return { trigger, isLoading };
+}
+
+// ─── Firecrawl Credits ───────────────────────────────────────
+
+export function useFirecrawlCredits() {
+	const [data, setData] = useState<FirecrawlCredits | null>(null);
+	const [isLoading, setIsLoading] = useState(true);
+
+	const fetch = useCallback(async () => {
+		try {
+			const result = await api.get<FirecrawlCredits>("/api/admin/firecrawl/credits");
+			setData(result);
+		} catch {
+			// ignore
+		} finally {
+			setIsLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		fetch();
+	}, [fetch]);
+
+	return { data, isLoading, refetch: fetch };
 }
 
 // ─── System Health ───────────────────────────────────────────

@@ -633,6 +633,45 @@ admin.get("/health", async (c) => {
 	return c.json(result);
 });
 
+// ─── Firecrawl Credits ───────────────────────────────────────
+
+admin.get("/firecrawl/credits", async (c) => {
+	const apiKey = env.FIRECRAWL_API_KEY;
+	if (!apiKey) {
+		return c.json({ status: "not_configured", error: "FIRECRAWL_API_KEY not set" });
+	}
+
+	try {
+		const response = await fetch("https://api.firecrawl.dev/v2/team/credit-usage", {
+			headers: { Authorization: `Bearer ${apiKey}` },
+		});
+		if (!response.ok) {
+			return c.json({ status: "error", error: `Firecrawl API returned ${response.status}` });
+		}
+		const data = await response.json() as {
+			success: boolean;
+			data: {
+				remainingCredits: number;
+				planCredits: number;
+				billingPeriodStart: string;
+				billingPeriodEnd: string;
+			};
+		};
+		if (!data.success) {
+			return c.json({ status: "error", error: "Firecrawl returned unsuccessful response" });
+		}
+		return c.json({
+			status: "ok",
+			remainingCredits: data.data.remainingCredits,
+			planCredits: data.data.planCredits,
+			billingPeriodStart: data.data.billingPeriodStart,
+			billingPeriodEnd: data.data.billingPeriodEnd,
+		});
+	} catch (err) {
+		return c.json({ status: "error", error: err instanceof Error ? err.message : String(err) });
+	}
+});
+
 // ─── Dev Reset ───────────────────────────────────────────────
 
 admin.post("/reset", async (c) => {

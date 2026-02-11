@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { PipelineSteps, pipelineDuration, relativeTime } from "@/components/admin/pipeline-steps";
 import {
@@ -142,6 +142,9 @@ export function AdminSourceDetailPage() {
 		const ok = await triggerScrape(source.id);
 		if (ok) {
 			toast.success("Skrapning startad");
+			// Refetch source after a delay to pick up lastError / lastScrapedAt
+			setTimeout(refetchSource, 10000);
+			setTimeout(refetchSource, 30000);
 		} else {
 			toast.error("Kunde inte starta skrapning");
 		}
@@ -188,6 +191,17 @@ export function AdminSourceDetailPage() {
 
 	return (
 		<div className="space-y-6 p-6">
+			{/* Error banner */}
+			{source.lastError && (
+				<div className="flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+					<AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+					<div>
+						<p className="text-sm font-medium text-destructive">Skrapningsfel</p>
+						<p className="text-sm text-destructive/80">{source.lastError}</p>
+					</div>
+				</div>
+			)}
+
 			{/* Header */}
 			<div className="flex items-center justify-between gap-4">
 				<div className="flex items-center gap-3">
@@ -310,12 +324,6 @@ export function AdminSourceDetailPage() {
 					<InfoRow label="Dokument" value={String(source.documentCount)} />
 					<InfoRow label="Skapad" value={source.createdAt ? formatDate(source.createdAt) : "-"} />
 					<InfoRow label="Senast scrapad" value={source.lastScrapedAt ? formatDate(source.lastScrapedAt) : "-"} />
-					{source.lastError && (
-						<div className="sm:col-span-2 lg:col-span-3">
-							<span className="text-xs font-medium text-muted-foreground">Senaste fel: </span>
-							<span className="text-xs text-destructive">{source.lastError}</span>
-						</div>
-					)}
 				</div>
 			</Card>
 

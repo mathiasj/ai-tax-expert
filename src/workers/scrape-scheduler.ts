@@ -164,7 +164,20 @@ async function processScrapeJob(job: Job<ScrapeJob>): Promise<void> {
 		onDocument,
 		doktyp,
 	});
-	await scraper.scrape();
+
+	let scrapeError: string | null = null;
+	try {
+		await scraper.scrape();
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		// Check for Firecrawl insufficient credits (402)
+		if (msg.includes("Insufficient credits") || msg.includes("402")) {
+			scrapeError = "Firecrawl: Otillräckliga credits. Fyll på via firecrawl.dev/pricing";
+		} else {
+			scrapeError = msg;
+		}
+		logger.error({ sourceId, target, error: msg }, "Scraper threw an error");
+	}
 
 	logger.info({ sourceId, target, documents: docCount, jobId: job.id }, "Scrape job completed");
 
@@ -173,7 +186,7 @@ async function processScrapeJob(job: Job<ScrapeJob>): Promise<void> {
 		.update(sources)
 		.set({
 			lastScrapedAt: new Date(),
-			lastError: null,
+			lastError: scrapeError,
 			updatedAt: new Date(),
 		})
 		.where(eq(sources.id, sourceId));
