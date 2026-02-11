@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, MoreVertical, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
@@ -14,12 +14,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Pagination } from "@/components/ui/pagination";
@@ -213,7 +207,6 @@ export function AdminSourcesPage() {
 								<th className="px-4 py-3 font-medium text-muted-foreground">Schema</th>
 								<th className="px-4 py-3 font-medium text-muted-foreground">Dokument</th>
 								<th className="px-4 py-3 font-medium text-muted-foreground">Senast scrapad</th>
-								<th className="px-4 py-3 font-medium text-muted-foreground" />
 							</tr>
 						</thead>
 						<tbody>
@@ -221,10 +214,7 @@ export function AdminSourcesPage() {
 								<tr
 									key={src.id}
 									className="cursor-pointer border-b border-border hover:bg-muted/50"
-									onClick={(e) => {
-										if ((e.target as HTMLElement).closest("[data-slot='actions']")) return;
-										navigate(`/admin/sources/${src.id}`);
-									}}
+									onClick={() => navigate(`/admin/sources/${src.id}`)}
 								>
 									<td className="px-4 py-3">
 										<div className="font-medium text-foreground">
@@ -252,36 +242,11 @@ export function AdminSourcesPage() {
 											"-"
 										)}
 									</td>
-									<td className="px-4 py-3 text-right" data-slot="actions">
-										<DropdownMenu>
-											<DropdownMenuTrigger asChild>
-												<Button variant="ghost" size="icon-xs">
-													<MoreVertical className="h-4 w-4" />
-												</Button>
-											</DropdownMenuTrigger>
-											<DropdownMenuContent align="end">
-												<DropdownMenuItem onSelect={() => navigate(`/admin/sources/${src.id}`)}>
-													Editera
-												</DropdownMenuItem>
-												{src.source !== "manual" && (
-													<DropdownMenuItem
-														onSelect={() => handleScrape(src.id)}
-														disabled={!!scrapingSourceId}
-													>
-														Skrapa nu
-													</DropdownMenuItem>
-												)}
-												<DropdownMenuItem variant="destructive" onSelect={() => setDeleteId(src.id)}>
-													Ta bort
-												</DropdownMenuItem>
-											</DropdownMenuContent>
-										</DropdownMenu>
-									</td>
 								</tr>
 							))}
 							{data?.sources.length === 0 && (
 								<tr>
-									<td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+									<td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
 										Inga källor hittades
 									</td>
 								</tr>
